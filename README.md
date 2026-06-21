@@ -2,10 +2,25 @@
 
 CLI utility that prints token and cost audits for local Codex, Claude, and OpenCode sessions.
 
-## Setup
+## Install
+
+Install the CLI with [uv](https://docs.astral.sh/uv/) — this puts `token-auditor` (and the
+`codax` alias) on your PATH:
 
 ```bash
-uv sync
+uv tool install git+https://github.com/stevencarpenter/token-auditor
+```
+
+Or run it once without installing:
+
+```bash
+uvx --from git+https://github.com/stevencarpenter/token-auditor token-auditor --help
+```
+
+For local development, sync the dev dependency group instead:
+
+```bash
+uv sync --group dev
 ```
 
 ## CLI Usage
@@ -13,24 +28,24 @@ uv sync
 Canonical entrypoint:
 
 ```bash
-uv run --project . token-auditor
+token-auditor
 ```
 
 Compatibility alias (same behavior):
 
 ```bash
-uv run --project . codax
+codax
 ```
 
 Common examples:
 
 ```bash
-uv run --project . token-auditor --provider codex
-uv run --project . token-auditor --provider claude
-uv run --project . token-auditor --provider claude --cwd "$PWD"
-uv run --project . token-auditor --provider opencode --cwd "$PWD"
-uv run --project . token-auditor --session-file /path/to/session.jsonl
-uv run --project . token-auditor --json
+token-auditor --provider codex
+token-auditor --provider claude
+token-auditor --provider claude --cwd "$PWD"
+token-auditor --provider opencode --cwd "$PWD"
+token-auditor --session-file /path/to/session.jsonl
+token-auditor --json
 ```
 
 Supported flags:
@@ -103,16 +118,18 @@ Text output supports an Everforest-inspired ANSI palette.
 
 ## zsh Wrappers
 
-`dot_config/zsh/dot_zshrc` defines:
+Convenience wrappers that audit a session the moment the underlying CLI exits. Drop these in
+your `~/.zshrc` (they assume `token-auditor` is on your PATH):
 
-- `codax`: runs `codex "$@"`, then runs:
-  `uv run --project ~/.local/share/chezmoi/token_auditor token-auditor --provider codex`
-- `claade`: runs `claude "$@"`, then runs:
-  `uv run --project ~/.local/share/chezmoi/token_auditor token-auditor --provider claude --cwd "$PWD"`
-- `opencade`: runs `opencode "$@"`, then runs:
-  `uv run --project ~/.local/share/chezmoi/token_auditor token-auditor --provider opencode --cwd "$PWD"`
-- The `claade` function name is intentional to mirror `codax` naming and avoid clobbering the `claude` command name.
-- All wrappers preserve the original command exit code and print a warning if audit invocation fails.
+```zsh
+codax()    { codex "$@";    local rc=$?; token-auditor --provider codex                 || true; return $rc; }
+claade()   { claude "$@";   local rc=$?; token-auditor --provider claude   --cwd "$PWD" || true; return $rc; }
+opencade() { opencode "$@"; local rc=$?; token-auditor --provider opencode --cwd "$PWD" || true; return $rc; }
+```
+
+- `claade` is spelled to mirror `codax` and to avoid clobbering the real `claude` command.
+- Each wrapper preserves the wrapped command's exit code and warns (without failing) if the
+  audit can't run.
 
 ## Development
 
@@ -124,7 +141,7 @@ uv run ruff format .
 uv run ty check .
 ```
 
-`ruff check --fix` does not run the formatter. CI also runs `uv run ruff format --check .`, so run format locally (or use `../scripts/test-token-auditor-ci.sh`) before pushing.
+`ruff check --fix` does not run the formatter. CI also runs `uv run ruff format --check .`, so run `uv run ruff format .` locally before pushing.
 
 ### Docstring Standard
 
