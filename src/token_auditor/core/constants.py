@@ -92,8 +92,8 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 6.25,
             "output_tokens": 25.00,
         },
-        # Introductory rates through 2026-08-31; standard rates (same as Sonnet 4.6:
-        # $3 in / $0.30 cache read / $3.75 cache write / $15 out) apply from 2026-09-01.
+        # Introductory rates through 2026-08-31 (per platform.claude.com).
+        # TODO(2026-09-01): update to standard rates ($3 in / $0.30 cache read / $3.75 cache write / $15 out).
         "claude-sonnet-5": {
             "input_tokens": 2.00,
             "cached_input_tokens": 0.20,

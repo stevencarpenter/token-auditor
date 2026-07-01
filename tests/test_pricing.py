@@ -42,7 +42,7 @@ def test_resolve_pricing_model_handles_sonnet_5() -> None:
 
 def test_calculate_costs_for_sonnet_5_uses_introductory_rates() -> None:
     # platform.claude.com: Sonnet 5 introductory (through 2026-08-31) = $2 input /
-    # $0.20 cache read / $2.50 5m cache write / $10 output per MTok.
+    # $0.20 cache read / $2.50 5-min cache write / $10 output per MTok.
     costs = calculate_costs(
         provider="claude",
         pricing_model="claude-sonnet-5",
@@ -60,9 +60,9 @@ def test_calculate_costs_for_sonnet_5_uses_introductory_rates() -> None:
     assert costs["session_total_cost_usd"] == pytest.approx(14.70)
 
 
-def test_calculate_costs_sonnet_5_long_context_bills_flat_standard_rates() -> None:
-    # Sonnet 5 includes the full 1M context window at standard pricing (no >200K surcharge),
-    # so long_context=True yields the same costs as standard.
+def test_calculate_costs_sonnet_5_long_context_matches_standard_mode() -> None:
+    # Sonnet 5 includes the full 1M context window at base pricing (no >200K surcharge),
+    # so long_context=True yields the same costs as long_context=False.
     standard = calculate_costs(
         provider="claude",
         pricing_model="claude-sonnet-5",
