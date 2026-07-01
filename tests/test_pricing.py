@@ -29,11 +29,67 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     # Bare Claude aliases (logged for some sessions) map to the current fleet.
     assert resolve_pricing_model("claude", "fable") == "claude-fable-5"
     assert resolve_pricing_model("claude", "opus") == "claude-opus-4-8"
-    assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-4-6"
+    assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5"
     assert resolve_pricing_model("claude", "haiku") == "claude-haiku-4-5"
 
 
-def test_resolve_pricing_model_handles_opus_4_8() -> None:
+def test_resolve_pricing_model_handles_sonnet_5() -> None:
+    # Sonnet 5 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
+    assert resolve_pricing_model("claude", "claude-sonnet-5") == "claude-sonnet-5"
+    assert resolve_pricing_model("claude", "claude-sonnet-5[1m]") == "claude-sonnet-5"
+    assert resolve_pricing_model("claude", "claude-sonnet-5-20260701") == "claude-sonnet-5"
+
+
+def test_calculate_costs_for_sonnet_5_uses_introductory_rates() -> None:
+    # platform.claude.com: Sonnet 5 introductory (through 2026-08-31) = $2 input /
+    # $0.20 cache read / $2.50 5m cache write / $10 output per MTok.
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-sonnet-5",
+        input_tokens=1_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+    )
+
+    assert costs["input_cost_usd"] == pytest.approx(2.00)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.20)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(2.50)
+    assert costs["output_cost_usd"] == pytest.approx(10.00)
+    assert costs["session_total_cost_usd"] == pytest.approx(14.70)
+
+
+def test_calculate_costs_sonnet_5_long_context_bills_flat_standard_rates() -> None:
+    # Sonnet 5 includes the full 1M context window at standard pricing (no >200K surcharge),
+    # so long_context=True yields the same costs as standard.
+    standard = calculate_costs(
+        provider="claude",
+        pricing_model="claude-sonnet-5",
+        input_tokens=1000,
+        cached_input_tokens=500_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=5000,
+        reasoning_output_tokens=0,
+        long_context=False,
+    )
+    long_context = calculate_costs(
+        provider="claude",
+        pricing_model="claude-sonnet-5",
+        input_tokens=1000,
+        cached_input_tokens=500_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=5000,
+        reasoning_output_tokens=0,
+        long_context=True,
+    )
+
+    assert long_context == standard
+    # input=$0.002, cached=$0.10, cache_creation=$0.25, output=$0.05 → total=$0.402
+    assert long_context["session_total_cost_usd"] == pytest.approx(0.402)
+
+
+
     # Opus 4.8 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
     assert resolve_pricing_model("claude", "claude-opus-4-8") == "claude-opus-4-8"
     assert resolve_pricing_model("claude", "claude-opus-4-8[1m]") == "claude-opus-4-8"
