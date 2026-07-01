@@ -92,6 +92,14 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 6.25,
             "output_tokens": 25.00,
         },
+        # Introductory rates through 2026-08-31 (per platform.claude.com).
+        # TODO(2026-09-01): update to standard rates ($3 in / $0.30 cache read / $3.75 cache write / $15 out).
+        "claude-sonnet-5": {
+            "input_tokens": 2.00,
+            "cached_input_tokens": 0.20,
+            "cache_creation_input_tokens": 2.50,
+            "output_tokens": 10.00,
+        },
         "claude-sonnet-4-6": {
             "input_tokens": 3.00,
             "cached_input_tokens": 0.30,
@@ -116,6 +124,7 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         "claude-fable-5[1m]": "claude-fable-5",
         "claude-opus-4-8[1m]": "claude-opus-4-8",
         "claude-opus-4-7[1m]": "claude-opus-4-7",
+        "claude-sonnet-5[1m]": "claude-sonnet-5",
         "claude-opus-4-5": "claude-opus-4-6",
         "claude-sonnet-4-5": "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001": "claude-haiku-4-5",
@@ -123,7 +132,7 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         # its current fleet member.
         "fable": "claude-fable-5",
         "opus": "claude-opus-4-8",
-        "sonnet": "claude-sonnet-4-6",
+        "sonnet": "claude-sonnet-5",
         "haiku": "claude-haiku-4-5",
     },
     "opencode": {},
@@ -135,6 +144,7 @@ MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
         ("claude-fable-5", "claude-fable-5"),
         ("claude-opus-4-8", "claude-opus-4-8"),
         ("claude-opus-4-7", "claude-opus-4-7"),
+        ("claude-sonnet-5", "claude-sonnet-5"),
         ("claude-opus-4-5", "claude-opus-4-6"),
         ("claude-sonnet-4-5", "claude-sonnet-4-6"),
         ("claude-haiku-4-5", "claude-haiku-4-5"),
@@ -156,6 +166,7 @@ LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     "claude-opus-4-8": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-4-8"],
     "claude-opus-4-7": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-4-7"],
     "claude-opus-4-6": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-4-6"],
+    "claude-sonnet-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-sonnet-5"],
     "claude-sonnet-4-6": TOKEN_PRICING_USD_PER_1M["claude"]["claude-sonnet-4-6"],
 }
 
