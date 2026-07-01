@@ -89,7 +89,7 @@ def test_calculate_costs_sonnet_5_long_context_bills_flat_standard_rates() -> No
     assert long_context["session_total_cost_usd"] == pytest.approx(0.402)
 
 
-
+def test_resolve_pricing_model_handles_opus_4_8() -> None:
     # Opus 4.8 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
     assert resolve_pricing_model("claude", "claude-opus-4-8") == "claude-opus-4-8"
     assert resolve_pricing_model("claude", "claude-opus-4-8[1m]") == "claude-opus-4-8"
