@@ -66,6 +66,26 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 30.000,
             "cache_creation_input_tokens": 0.0,
         },
+        # GPT-5.6 preview family rates (per platform.openai.com): cache reads are
+        # discounted by 90%, and cache writes are billed at 1.25x input pricing.
+        "gpt-5.6-sol": {
+            "input_tokens": 5.000,
+            "cached_input_tokens": 0.500,
+            "output_tokens": 30.000,
+            "cache_creation_input_tokens": 6.250,
+        },
+        "gpt-5.6-terra": {
+            "input_tokens": 2.500,
+            "cached_input_tokens": 0.250,
+            "output_tokens": 15.000,
+            "cache_creation_input_tokens": 3.125,
+        },
+        "gpt-5.6-luna": {
+            "input_tokens": 1.000,
+            "cached_input_tokens": 0.100,
+            "output_tokens": 6.000,
+            "cache_creation_input_tokens": 1.250,
+        },
     },
     "claude": {
         "claude-fable-5": {

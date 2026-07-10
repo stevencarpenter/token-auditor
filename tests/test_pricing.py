@@ -26,6 +26,9 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     # Date-suffixed variants resolve to the most specific (longest) matching prefix.
     assert resolve_pricing_model("codex", "gpt-5.4-mini-2026-03-17") == "gpt-5.4-mini"
     assert resolve_pricing_model("codex", "gpt-5.5-2026-04-01") == "gpt-5.5"
+    assert resolve_pricing_model("codex", "gpt-5.6-sol-2026-06-26") == "gpt-5.6-sol"
+    assert resolve_pricing_model("codex", "gpt-5.6-terra-2026-06-26") == "gpt-5.6-terra"
+    assert resolve_pricing_model("codex", "gpt-5.6-luna-2026-06-26") == "gpt-5.6-luna"
     # Bare Claude aliases (logged for some sessions) map to the current fleet.
     assert resolve_pricing_model("claude", "fable") == "claude-fable-5"
     assert resolve_pricing_model("claude", "opus") == "claude-opus-4-8"
@@ -318,6 +321,34 @@ def test_calculate_costs_for_gpt_5_4_family_uses_current_rates() -> None:
     assert mini["cached_input_cost_usd"] == pytest.approx(0.0075)
     assert mini["output_cost_usd"] == pytest.approx(0.9)
     assert mini["session_total_cost_usd"] == pytest.approx(1.5825)
+
+
+@pytest.mark.parametrize(
+    ("model", "input_rate", "output_rate"),
+    (
+        ("gpt-5.6-sol", 5.0, 30.0),
+        ("gpt-5.6-terra", 2.5, 15.0),
+        ("gpt-5.6-luna", 1.0, 6.0),
+    ),
+)
+def test_calculate_costs_for_gpt_5_6_family_uses_preview_rates(model: str, input_rate: float, output_rate: float) -> None:
+    costs = calculate_costs(
+        provider="codex",
+        pricing_model=model,
+        input_tokens=1_000_000,
+        cached_input_tokens=100_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=200_000,
+    )
+
+    # GPT-5.6 preview: cache reads are 0.1x input and cache writes are 1.25x input.
+    assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * 0.1 * input_rate)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate)
+    assert costs["output_cost_usd"] == pytest.approx(0.8 * output_rate)
+    assert costs["reasoning_output_cost_usd"] == pytest.approx(0.2 * output_rate)
+    assert costs["session_total_cost_usd"] == pytest.approx(0.935 * input_rate + output_rate)
 
 
 def test_calculate_costs_returns_zero_breakdown_for_unknown_pricing_models() -> None:
