@@ -26,3 +26,10 @@ logs, prompts, credentials, or other potentially sensitive local data.
 Open a pull request against `main` with a clear description of the motivation,
 the behavior change, and validation performed. Maintainers may request changes
 before merging.
+
+## Releases
+
+Merging a pull request into `main` creates a GitHub Release automatically. The
+release version uses the UTC date (`YYYY.MM.DD`); additional releases on the
+same date use a PEP 440 post-release suffix (`YYYY.MM.DD.post1`, then
+`YYYY.MM.DD.post2`, and so on).
