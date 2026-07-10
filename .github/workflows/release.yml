@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out merge commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Determine release version
+        id: version
+        env:
+          RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+
+          date_version="$(date -u +%Y.%m.%d)"
+          short_sha="${RELEASE_SHA:0:7}"
+          base_tag="$date_version"
+          release_tag="$base_tag"
+
+          if git ls-remote --exit-code origin "refs/tags/$base_tag" >/dev/null 2>&1; then
+            release_tag="${base_tag}+${short_sha}"
+          fi
+
+          if git ls-remote --exit-code origin "refs/tags/$release_tag" >/dev/null 2>&1; then
+            echo "Release tag $release_tag already exists; nothing to do."
+            {
+              echo "skip=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo "tag=$release_tag"
+            echo "version=$release_tag"
+            echo "skip=false"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifacts
+        if: steps.version.outputs.skip != 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+          replacements = {
+              Path("pyproject.toml"): (r'(?m)^version = "[^"]+"$', f'version = "{version}"'),
+              Path("src/token_auditor/__init__.py"): (
+                  r'(?m)^__version__ = "[^"]+"$',
+                  f'__version__ = "{version}"',
+              ),
+          }
+          for path, (pattern, replacement) in replacements.items():
+              contents = path.read_text()
+              updated, count = re.subn(pattern, replacement, contents)
+              if count != 1:
+                  raise SystemExit(f"expected one version in {path}, found {count}")
+              path.write_text(updated)
+          PY
+          uv build
+
+      - name: Create release tag
+        if: steps.version.outputs.skip != 'true'
+        env:
+          RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git tag "$RELEASE_TAG" "$RELEASE_SHA"
+          git push origin "$RELEASE_TAG"
+
+      - name: Publish GitHub Release
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" dist/* \
+            --title "$RELEASE_TAG" \
+            --verify-tag \
+            --generate-notes
