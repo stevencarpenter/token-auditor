@@ -31,4 +31,5 @@ before merging.
 
 Merging a pull request into `main` creates a GitHub Release automatically. The
 release version uses the UTC date (`YYYY.MM.DD`); additional releases on the
-same date append the merge commit's short SHA.
+same date use a PEP 440 post-release suffix (`YYYY.MM.DD.post1`, then
+`YYYY.MM.DD.post2`, and so on).

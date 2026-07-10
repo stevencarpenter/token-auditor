@@ -34,27 +34,17 @@ jobs:
 
       - name: Determine release version
         id: version
-        env:
-          RELEASE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
 
           date_version="$(date -u +%Y.%m.%d)"
-          short_sha="${RELEASE_SHA:0:7}"
-          base_tag="$date_version"
-          release_tag="$base_tag"
+          release_tag="$date_version"
+          post_number=0
 
-          if git ls-remote --exit-code origin "refs/tags/$base_tag" >/dev/null 2>&1; then
-            release_tag="${base_tag}+${short_sha}"
-          fi
-
-          if git ls-remote --exit-code origin "refs/tags/$release_tag" >/dev/null 2>&1; then
-            echo "Release tag $release_tag already exists; nothing to do."
-            {
-              echo "skip=true"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          while git ls-remote --exit-code origin "refs/tags/$release_tag" >/dev/null 2>&1; do
+            post_number=$((post_number + 1))
+            release_tag="${date_version}.post${post_number}"
+          done
 
           {
             echo "tag=$release_tag"
