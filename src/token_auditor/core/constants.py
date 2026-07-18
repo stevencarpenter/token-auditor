@@ -60,14 +60,35 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 4.500,
             "cache_creation_input_tokens": 0.0,
         },
+        "gpt-5.4-nano": {
+            "input_tokens": 0.200,
+            "cached_input_tokens": 0.020,
+            "output_tokens": 1.250,
+            "cache_creation_input_tokens": 0.0,
+        },
+        # Pro tiers do not support prompt caching (developers.openai.com shows no
+        # cached-input rate), so cached tokens — which should never appear in their
+        # logs — are billed at the full input rate rather than a nonexistent discount.
+        "gpt-5.4-pro": {
+            "input_tokens": 30.000,
+            "cached_input_tokens": 30.000,
+            "output_tokens": 180.000,
+            "cache_creation_input_tokens": 0.0,
+        },
         "gpt-5.5": {
             "input_tokens": 5.000,
             "cached_input_tokens": 0.500,
             "output_tokens": 30.000,
             "cache_creation_input_tokens": 0.0,
         },
-        # GPT-5.6 preview family rates (per platform.openai.com): cache reads are
-        # discounted by 90%, and cache writes are billed at 1.25x input pricing.
+        "gpt-5.5-pro": {
+            "input_tokens": 30.000,
+            "cached_input_tokens": 30.000,
+            "output_tokens": 180.000,
+            "cache_creation_input_tokens": 0.0,
+        },
+        # GPT-5.6 family rates (per platform.openai.com; GA since 2026-07-09): cache
+        # reads are discounted by 90%, and cache writes are billed at 1.25x input pricing.
         "gpt-5.6-sol": {
             "input_tokens": 5.000,
             "cached_input_tokens": 0.500,
