@@ -23,8 +23,14 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("codex", "gpt-5.5") == "gpt-5.5"
     assert resolve_pricing_model("codex", "gpt-5.4") == "gpt-5.4"
     assert resolve_pricing_model("codex", "gpt-5.4-mini") == "gpt-5.4-mini"
+    assert resolve_pricing_model("codex", "gpt-5.4-nano") == "gpt-5.4-nano"
+    assert resolve_pricing_model("codex", "gpt-5.4-pro") == "gpt-5.4-pro"
+    assert resolve_pricing_model("codex", "gpt-5.5-pro") == "gpt-5.5-pro"
     # Date-suffixed variants resolve to the most specific (longest) matching prefix.
     assert resolve_pricing_model("codex", "gpt-5.4-mini-2026-03-17") == "gpt-5.4-mini"
+    assert resolve_pricing_model("codex", "gpt-5.4-nano-2026-03-17") == "gpt-5.4-nano"
+    assert resolve_pricing_model("codex", "gpt-5.4-pro-2026-03-17") == "gpt-5.4-pro"
+    assert resolve_pricing_model("codex", "gpt-5.5-pro-2026-04-01") == "gpt-5.5-pro"
     assert resolve_pricing_model("codex", "gpt-5.5-2026-04-01") == "gpt-5.5"
     assert resolve_pricing_model("codex", "gpt-5.6-sol-2026-06-26") == "gpt-5.6-sol"
     assert resolve_pricing_model("codex", "gpt-5.6-terra-2026-06-26") == "gpt-5.6-terra"
@@ -90,6 +96,46 @@ def test_calculate_costs_sonnet_5_long_context_matches_standard_mode() -> None:
     assert long_context == standard
     # input=$0.002, cached=$0.10, cache_creation=$0.25, output=$0.05 → total=$0.402
     assert long_context["session_total_cost_usd"] == pytest.approx(0.402)
+
+
+def test_calculate_costs_for_gpt_5_4_nano_uses_verified_rates() -> None:
+    # developers.openai.com: gpt-5.4-nano = $0.20 input / $0.02 cached input / $1.25 output
+    # per MTok. Codex billable input = input - cached - cache_creation.
+    costs = calculate_costs(
+        provider="codex",
+        pricing_model="gpt-5.4-nano",
+        input_tokens=2_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=0,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+    )
+
+    assert costs["input_cost_usd"] == pytest.approx(0.20)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.02)
+    assert costs["output_cost_usd"] == pytest.approx(1.25)
+    assert costs["session_total_cost_usd"] == pytest.approx(1.47)
+
+
+def test_calculate_costs_for_pro_tiers_bill_cached_input_at_full_rate() -> None:
+    # developers.openai.com: gpt-5.4-pro / gpt-5.5-pro = $30 input / $180 output per MTok
+    # with prompt caching unsupported — cached tokens (which should never appear in pro
+    # session logs) carry no discount and bill at the full input rate.
+    for pricing_model in ("gpt-5.4-pro", "gpt-5.5-pro"):
+        costs = calculate_costs(
+            provider="codex",
+            pricing_model=pricing_model,
+            input_tokens=2_000_000,
+            cached_input_tokens=1_000_000,
+            cache_creation_input_tokens=0,
+            output_tokens=1_000_000,
+            reasoning_output_tokens=0,
+        )
+
+        assert costs["input_cost_usd"] == pytest.approx(30.00)
+        assert costs["cached_input_cost_usd"] == pytest.approx(30.00)
+        assert costs["output_cost_usd"] == pytest.approx(180.00)
+        assert costs["session_total_cost_usd"] == pytest.approx(240.00)
 
 
 def test_resolve_pricing_model_handles_opus_4_8() -> None:
