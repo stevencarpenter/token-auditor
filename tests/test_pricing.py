@@ -37,7 +37,8 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("codex", "gpt-5.6-luna-2026-06-26") == "gpt-5.6-luna"
     # Bare Claude aliases (logged for some sessions) map to the current fleet.
     assert resolve_pricing_model("claude", "fable") == "claude-fable-5"
-    assert resolve_pricing_model("claude", "opus") == "claude-opus-4-8"
+    assert resolve_pricing_model("claude", "opus") == "claude-opus-5"
+    assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5"
     assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5"
     assert resolve_pricing_model("claude", "haiku") == "claude-haiku-4-5"
 
@@ -136,6 +137,69 @@ def test_calculate_costs_for_pro_tiers_bill_cached_input_at_full_rate() -> None:
         assert costs["cached_input_cost_usd"] == pytest.approx(30.00)
         assert costs["output_cost_usd"] == pytest.approx(180.00)
         assert costs["session_total_cost_usd"] == pytest.approx(240.00)
+
+
+def test_resolve_pricing_model_handles_opus_5() -> None:
+    # Opus 5 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
+    assert resolve_pricing_model("claude", "claude-opus-5") == "claude-opus-5"
+    assert resolve_pricing_model("claude", "claude-opus-5[1m]") == "claude-opus-5"
+    assert resolve_pricing_model("claude", "claude-opus-5-20260715") == "claude-opus-5"
+
+
+def test_resolve_pricing_model_opus_5_prefix_does_not_shadow_opus_4_x() -> None:
+    # "claude-opus-5" must not be reachable as a prefix of the 4.x ids, and vice versa; the
+    # prefix table is ordered, so this pins that Opus 5 does not swallow Opus 4.8/4.7/4.6.
+    assert resolve_pricing_model("claude", "claude-opus-4-8") == "claude-opus-4-8"
+    assert resolve_pricing_model("claude", "claude-opus-4-7") == "claude-opus-4-7"
+    assert resolve_pricing_model("claude", "claude-opus-4-6") == "claude-opus-4-6"
+
+
+def test_calculate_costs_for_opus_5_uses_verified_standard_rates() -> None:
+    # platform.claude.com: Opus 5 ships as a drop-in upgrade at Opus 4.8's pricing —
+    # $5 input / $0.50 cache read / $6.25 5m cache write / $25 output per MTok.
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-opus-5",
+        input_tokens=1_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+    )
+
+    assert costs["input_cost_usd"] == pytest.approx(5.00)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.50)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(6.25)
+    assert costs["output_cost_usd"] == pytest.approx(25.00)
+    assert costs["session_total_cost_usd"] == pytest.approx(36.75)
+
+
+def test_calculate_costs_opus_5_long_context_bills_flat_standard_rates() -> None:
+    # Opus 5 provides the full 1M context window as both default and maximum at standard
+    # pricing (no >200K surcharge), so long_context=True yields the same costs as standard.
+    standard = calculate_costs(
+        provider="claude",
+        pricing_model="claude-opus-5",
+        input_tokens=1000,
+        cached_input_tokens=500_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=5000,
+        reasoning_output_tokens=0,
+        long_context=False,
+    )
+    long_context = calculate_costs(
+        provider="claude",
+        pricing_model="claude-opus-5",
+        input_tokens=1000,
+        cached_input_tokens=500_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=5000,
+        reasoning_output_tokens=0,
+        long_context=True,
+    )
+
+    assert long_context == standard
+    assert long_context["session_total_cost_usd"] == pytest.approx(1.005)
 
 
 def test_resolve_pricing_model_handles_opus_4_8() -> None:
@@ -257,6 +321,7 @@ def test_fast_mode_pricing_table_values_match_documented_multipliers() -> None:
     # of the 4.8 release); the 4.6/4.7 fast tier is 6x. Within each tier, cache read is 0.1x and
     # the 5-minute cache write is 1.25x of that tier's fast input rate.
     expected_standard_multiplier = {
+        "claude-opus-5": 2.0,
         "claude-opus-4-8": 2.0,
         "claude-opus-4-7": 6.0,
         "claude-opus-4-6": 6.0,
