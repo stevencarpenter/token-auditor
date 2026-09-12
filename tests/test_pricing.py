@@ -36,7 +36,7 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("codex", "gpt-5.6-terra-2026-06-26") == "gpt-5.6-terra"
     assert resolve_pricing_model("codex", "gpt-5.6-luna-2026-06-26") == "gpt-5.6-luna"
     # Bare Claude aliases (logged for some sessions) map to the current fleet.
-    assert resolve_pricing_model("claude", "fable") == "claude-fable-5"
+    assert resolve_pricing_model("claude", "fable") == "claude-fable-5-1"
     assert resolve_pricing_model("claude", "opus") == "claude-opus-5"
     assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5"
     assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5"
@@ -437,12 +437,12 @@ def test_calculate_costs_for_gpt_5_4_family_uses_current_rates() -> None:
 @pytest.mark.parametrize(
     ("model", "input_rate", "output_rate"),
     (
-        ("gpt-5.6-sol", 5.0, 30.0),
-        ("gpt-5.6-terra", 2.5, 15.0),
-        ("gpt-5.6-luna", 1.0, 6.0),
+        ("gpt-5.6-sol", 4.0, 20.0),
+        ("gpt-5.6-terra", 2.0, 12.0),
+        ("gpt-5.6-luna", 0.2, 1.2),
     ),
 )
-def test_calculate_costs_for_gpt_5_6_family_uses_preview_rates(model: str, input_rate: float, output_rate: float) -> None:
+def test_calculate_costs_for_gpt_5_6_family_uses_promotional_rates(model: str, input_rate: float, output_rate: float) -> None:
     costs = calculate_costs(
         provider="codex",
         pricing_model=model,
@@ -453,13 +453,51 @@ def test_calculate_costs_for_gpt_5_6_family_uses_preview_rates(model: str, input
         reasoning_output_tokens=200_000,
     )
 
-    # GPT-5.6 preview: cache reads are 0.1x input and cache writes are 1.25x input.
+    # GPT-5.6: cache reads are 0.1x input and cache writes are 1.25x input.
     assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate)
     assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * 0.1 * input_rate)
     assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate)
     assert costs["output_cost_usd"] == pytest.approx(0.8 * output_rate)
     assert costs["reasoning_output_cost_usd"] == pytest.approx(0.2 * output_rate)
     assert costs["session_total_cost_usd"] == pytest.approx(0.935 * input_rate + output_rate)
+
+
+def test_resolve_pricing_model_handles_fable_5_1() -> None:
+    assert resolve_pricing_model("claude", "claude-fable-5-1") == "claude-fable-5-1"
+    assert resolve_pricing_model("claude", "claude-fable-5-1[1m]") == "claude-fable-5-1"
+    assert resolve_pricing_model("claude", "fable") == "claude-fable-5-1"
+
+
+def test_resolve_pricing_model_fable_5_1_prefix_does_not_fall_back_to_fable_5() -> None:
+    # A dated Fable 5.1 snapshot must not match the shorter "claude-fable-5" prefix,
+    # which would price its cache reads at $1.00/MTok instead of $0.25/MTok.
+    assert resolve_pricing_model("claude", "claude-fable-5-1-20260901") == "claude-fable-5-1"
+    assert resolve_pricing_model("claude", "claude-fable-5-20260609") == "claude-fable-5"
+
+
+def test_calculate_costs_for_fable_5_1_uses_reduced_cache_read_rate() -> None:
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-fable-5-1",
+        input_tokens=1_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+    )
+
+    # Cache reads are 0.025x the $10/M base input rate, not the usual 0.1x.
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.25)
+    assert costs["input_cost_usd"] == pytest.approx(10.0)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(12.5)
+    assert costs["output_cost_usd"] == pytest.approx(50.0)
+
+
+def test_openrouter_pricing_covers_models_seen_in_opencode_and_pi_sessions() -> None:
+    openrouter = TOKEN_PRICING_USD_PER_1M["openrouter"]
+    for model in ("z-ai/glm-5.3-flash", "moonshotai/kimi-k3", "deepseek/deepseek-v4-pro-0813", "~anthropic/claude-fable-latest"):
+        assert model in openrouter
+    assert openrouter["thinkingmachines/inkling:free"]["output_tokens"] == 0.0
 
 
 def test_resolve_pricing_model_handles_gpt_6_astra() -> None:

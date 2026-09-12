@@ -87,25 +87,26 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 180.000,
             "cache_creation_input_tokens": 0.0,
         },
-        # GPT-5.6 family rates (per platform.openai.com; GA since 2026-07-09): cache
-        # reads are discounted by 90%, and cache writes are billed at 1.25x input pricing.
+        # GPT-5.6 family rates (per developers.openai.com). Cache reads are discounted by
+        # 90% and cache writes are billed at 1.25x input. These are promotional rates,
+        # held at least through 2026-11-21; they undercut the GPT-5.5 rates above.
         "gpt-5.6-sol": {
-            "input_tokens": 5.000,
-            "cached_input_tokens": 0.500,
-            "output_tokens": 30.000,
-            "cache_creation_input_tokens": 6.250,
+            "input_tokens": 4.000,
+            "cached_input_tokens": 0.400,
+            "output_tokens": 20.000,
+            "cache_creation_input_tokens": 5.000,
         },
         "gpt-5.6-terra": {
-            "input_tokens": 2.500,
-            "cached_input_tokens": 0.250,
-            "output_tokens": 15.000,
-            "cache_creation_input_tokens": 3.125,
+            "input_tokens": 2.000,
+            "cached_input_tokens": 0.200,
+            "output_tokens": 12.000,
+            "cache_creation_input_tokens": 2.500,
         },
         "gpt-5.6-luna": {
-            "input_tokens": 1.000,
-            "cached_input_tokens": 0.100,
-            "output_tokens": 6.000,
-            "cache_creation_input_tokens": 1.250,
+            "input_tokens": 0.200,
+            "cached_input_tokens": 0.020,
+            "output_tokens": 1.200,
+            "cache_creation_input_tokens": 0.250,
         },
         # GPT-6 Astra (GA 2026-09-03) ships as a single model with no mini/nano/pro tier
         # (developers.openai.com/api/docs/models/gpt-6-astra lists gpt-6-astra as the only
@@ -120,6 +121,14 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
         },
     },
     "claude": {
+        # Fable 5.1 shares Fable 5's base rates but prices cache reads at 0.025x input
+        # ($0.25/MTok) rather than the 0.1x every other Claude model uses.
+        "claude-fable-5-1": {
+            "input_tokens": 10.00,
+            "cached_input_tokens": 0.25,
+            "cache_creation_input_tokens": 12.50,
+            "output_tokens": 50.00,
+        },
         "claude-fable-5": {
             "input_tokens": 10.00,
             "cached_input_tokens": 1.00,
@@ -151,8 +160,9 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 6.25,
             "output_tokens": 25.00,
         },
-        # Introductory rates through 2026-08-31 (per platform.claude.com).
-        # TODO(2026-09-01): update to standard rates ($3 in / $0.30 cache read / $3.75 cache write / $15 out).
+        # These rates launched as introductory pricing through 2026-08-31, but
+        # platform.claude.com now records them as standard: the scheduled increase to
+        # $3 in / $15 out on 2026-09-01 was cancelled and did not take effect.
         "claude-sonnet-5": {
             "input_tokens": 2.00,
             "cached_input_tokens": 0.20,
@@ -173,6 +183,79 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
         },
     },
     "opencode": {},
+    # OpenRouter rates (openrouter.ai/api/v1/models, fetched 2026-09-12) for the models
+    # actually used through OpenRouter in OpenCode and pi sessions. Fractional rates are
+    # OpenRouter's own, not the upstream provider's list price. OpenRouter reports no
+    # one-time cache-write charge for these models, so cache writes are 0.0; Gemini bills
+    # cache storage per token per hour, which this per-token schema cannot express.
+    # NOT YET CONSUMED: OpenCode records use the cost the OpenCode DB already reports
+    # (cost_source="provider_billed") and never call calculate_costs, and pi has no parser.
+    "openrouter": {
+        "z-ai/glm-5.3-flash": {
+            "input_tokens": 0.150,
+            "cached_input_tokens": 0.030,
+            "output_tokens": 0.500,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "z-ai/glm-5.2": {
+            "input_tokens": 0.600,
+            "cached_input_tokens": 0.150,
+            "output_tokens": 2.000,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "moonshotai/kimi-k3": {
+            "input_tokens": 2.302729,
+            "cached_input_tokens": 0.263169,
+            "output_tokens": 11.550195,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "minimax/minimax-m3": {
+            "input_tokens": 0.300,
+            "cached_input_tokens": 0.060,
+            "output_tokens": 1.200,
+            "cache_creation_input_tokens": 0.0,
+        },
+        # deepseek-v4-pro is a floating pointer to the latest dated build, which is
+        # priced differently from the 0813 snapshot; both are logged, so both are listed.
+        "deepseek/deepseek-v4-pro": {
+            "input_tokens": 0.819366,
+            "cached_input_tokens": 0.068281,
+            "output_tokens": 1.638732,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "deepseek/deepseek-v4-pro-0813": {
+            "input_tokens": 0.578160,
+            "cached_input_tokens": 0.018396,
+            "output_tokens": 1.734480,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "google/gemini-3.6-flash": {
+            "input_tokens": 0.750,
+            "cached_input_tokens": 0.075,
+            "output_tokens": 3.750,
+            "cache_creation_input_tokens": 0.0,
+        },
+        # "~"-prefixed ids are OpenRouter floating aliases that track whatever the
+        # upstream vendor currently ships, so these rates move without the id changing.
+        "~moonshotai/kimi-latest": {
+            "input_tokens": 2.302729,
+            "cached_input_tokens": 0.263169,
+            "output_tokens": 11.550195,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "~anthropic/claude-fable-latest": {
+            "input_tokens": 10.000,
+            "cached_input_tokens": 0.250,
+            "output_tokens": 50.000,
+            "cache_creation_input_tokens": 12.500,
+        },
+        "thinkingmachines/inkling:free": {
+            "input_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "output_tokens": 0.0,
+            "cache_creation_input_tokens": 0.0,
+        },
+    },
 }
 
 MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
@@ -180,6 +263,7 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         "gpt-5.3-codex-mini": "gpt-5.2-codex-mini",
     },
     "claude": {
+        "claude-fable-5-1[1m]": "claude-fable-5-1",
         "claude-fable-5[1m]": "claude-fable-5",
         "claude-opus-5[1m]": "claude-opus-5",
         "claude-opus-4-8[1m]": "claude-opus-4-8",
@@ -190,18 +274,22 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         "claude-haiku-4-5-20251001": "claude-haiku-4-5",
         # Bare aliases are logged for some sessions (e.g. subagents); map each tier to
         # its current fleet member.
-        "fable": "claude-fable-5",
+        "fable": "claude-fable-5-1",
         "opus": "claude-opus-5",
         "opus[1m]": "claude-opus-5",
         "sonnet": "claude-sonnet-5",
         "haiku": "claude-haiku-4-5",
     },
     "opencode": {},
+    "openrouter": {},
 }
 
 MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
     "codex": (),
     "claude": (
+        # Ordering matters: "claude-fable-5-1" must be tried before "claude-fable-5",
+        # or a dated Fable 5.1 snapshot resolves to Fable 5 and misprices cache reads 4x.
+        ("claude-fable-5-1", "claude-fable-5-1"),
         ("claude-fable-5", "claude-fable-5"),
         ("claude-opus-5", "claude-opus-5"),
         ("claude-opus-4-8", "claude-opus-4-8"),
@@ -212,6 +300,7 @@ MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
         ("claude-haiku-4-5", "claude-haiku-4-5"),
     ),
     "opencode": (),
+    "openrouter": (),
 }
 
 LONG_CONTEXT_INPUT_THRESHOLD: int = 200_000
@@ -224,6 +313,7 @@ LONG_CONTEXT_INPUT_THRESHOLD: int = 200_000
 # so the long-context code path stays exercised and a future model that reintroduces a
 # premium only needs its rates changed here.
 LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
+    "claude-fable-5-1": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5-1"],
     "claude-fable-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5"],
     "claude-opus-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-5"],
     "claude-opus-4-8": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-4-8"],
