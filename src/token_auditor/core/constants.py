@@ -188,10 +188,21 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
     # OpenRouter's own, not the upstream provider's list price. OpenRouter reports no
     # one-time cache-write charge for these models, so cache writes are 0.0; Gemini bills
     # cache storage per token per hour, which this per-token schema cannot express.
-    # Used ONLY as a fallback for OpenCode rows the OpenCode DB reports no cost for; a
-    # reported cost always wins. OpenRouter routes each request to whichever upstream
-    # endpoint is available, and those endpoints charge different rates, so these
-    # per-model figures do not reproduce actual billing. pi has no parser yet.
+    #
+    # REFERENCE ONLY — deliberately not wired into cost computation, and it should stay
+    # that way. OpenRouter routes each request to whichever upstream endpoint is
+    # available, and those endpoints charge different rates, so no single per-model rate
+    # reproduces a bill. Computing these rates over every costed OpenRouter row in a real
+    # OpenCode database gives computed/actual ratios of 1.00 for minimax-m3 (152 rows),
+    # exactly 2.00 for glm-5.3-flash (7,472 rows), 0.77-0.87 for kimi-k3 (704 rows),
+    # 0.43-0.57 for glm-5.2 (48 rows), and 1.88-16.84 for deepseek-v4-pro (304 rows).
+    # The spread within a single model is the point: it cannot be corrected by fixing a
+    # constant. OpenCode records therefore report the cost the OpenCode DB already
+    # carries (cost_source="provider_billed"), which is authoritative. pi has no parser.
+    #
+    # A related trap for anyone who does use these: OpenCode counts reasoning tokens
+    # separately from output tokens, while calculate_costs treats reasoning as a subset
+    # of output, so OpenCode's counts cannot be passed to it unchanged.
     "openrouter": {
         "z-ai/glm-5.3-flash": {
             "input_tokens": 0.150,

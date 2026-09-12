@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from token_auditor.core.pricing import calculate_costs, resolve_pricing_model, zero_costs
+from token_auditor.core.pricing import zero_costs
 from token_auditor.core.types import AuditRecord, JsonEvent
 from token_auditor.core.utils import safe_float, safe_int
 
@@ -17,7 +17,6 @@ class OpencodeUsageRow:
     session_id: str
     time_created: int
     timestamp: str
-    provider: str
     model: str
     cwd: str
     root: str
@@ -83,7 +82,6 @@ def extract_opencode_usage_row(row: JsonEvent) -> OpencodeUsageRow | None:
         session_id=str(row.get("session_id", "")),
         time_created=safe_int(row.get("time_created", 0)),
         timestamp=str(time.get("completed", "")),
-        provider=str(data.get("providerID", "")),
         model=str(data.get("modelID", "")),
         cwd=str(path.get("cwd", "")),
         root=str(path.get("root", "")),
@@ -114,36 +112,6 @@ def choose_opencode_session_id(rows: tuple[OpencodeUsageRow, ...], cwd: Path) ->
     return latest_row.session_id
 
 
-def estimate_opencode_row_cost(row: OpencodeUsageRow) -> float:
-    """Estimate one OpenCode row's cost from the rate table, or 0.0 when unpriced.
-
-    Only used as a fallback for rows the OpenCode DB reports no cost for. OpenRouter
-    routes each request to whichever upstream endpoint is available, and those endpoints
-    charge different rates, so a single per-model rate does not reproduce what OpenRouter
-    actually billed: measured against this machine's history the table is exact for
-    minimax-m3, 2x high for glm-5.3-flash, and off by up to 17x for deepseek-v4-pro.
-    The cost the DB reports is therefore authoritative whenever it is present.
-    """
-    pricing_model = resolve_pricing_model(row.provider, row.model)
-    if not pricing_model:
-        return 0.0
-
-    # OpenCode counts reasoning tokens separately from output tokens, while
-    # calculate_costs treats reasoning as a subset of output. Pass the sum so both are
-    # billed at the output rate exactly once. Its input count already excludes cache
-    # reads, which is why no cached-token subtraction applies here.
-    costs = calculate_costs(
-        provider=row.provider,
-        pricing_model=pricing_model,
-        input_tokens=row.input_tokens,
-        cached_input_tokens=row.cached_input_tokens,
-        cache_creation_input_tokens=row.cache_creation_input_tokens,
-        output_tokens=row.output_tokens + row.reasoning_output_tokens,
-        reasoning_output_tokens=row.reasoning_output_tokens,
-    )
-    return costs["session_total_cost_usd"]
-
-
 def parse_opencode_rows(rows: tuple[JsonEvent, ...], session_file: Path, cwd: Path) -> AuditRecord | None:
     """Parse normalized OpenCode DB rows into the shared audit payload."""
     usage_rows = tuple(snapshot for snapshot in (extract_opencode_usage_row(row) for row in rows) if snapshot is not None)
@@ -161,8 +129,7 @@ def parse_opencode_rows(rows: tuple[JsonEvent, ...], session_file: Path, cwd: Pa
 
     costs = zero_costs()
     provider_billed_total = sum(row.cost_usd for row in selected)
-    estimated_total = sum(estimate_opencode_row_cost(row) for row in selected if row.cost_usd == 0.0)
-    costs["session_total_cost_usd"] = provider_billed_total + estimated_total
+    costs["session_total_cost_usd"] = provider_billed_total
 
     return {
         "provider": "opencode",
@@ -178,7 +145,7 @@ def parse_opencode_rows(rows: tuple[JsonEvent, ...], session_file: Path, cwd: Pa
         "output_tokens": sum(row.output_tokens for row in selected),
         "reasoning_output_tokens": sum(row.reasoning_output_tokens for row in selected),
         "total_tokens": sum(row.total_tokens for row in selected),
-        "cost_source": "provider_billed" if estimated_total == 0.0 else "mixed",
+        "cost_source": "provider_billed",
         "provider_billed_total": provider_billed_total,
         "provider_billed_unit": "usd",
         **costs,
