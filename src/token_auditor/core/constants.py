@@ -107,6 +107,17 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 6.000,
             "cache_creation_input_tokens": 1.250,
         },
+        # GPT-6 Astra (GA 2026-09-03) ships as a single model with no mini/nano/pro tier
+        # (developers.openai.com/api/docs/models/gpt-6-astra lists gpt-6-astra as the only
+        # snapshot). Standard-tier rates only: batch/flex (0.5x), fast (2x), the >272K
+        # long-context tier, and the data-residency surcharge are not modeled, for the same
+        # reason as gpt-5.5 — codex logs cumulative session usage and no service tier.
+        "gpt-6-astra": {
+            "input_tokens": 10.000,
+            "cached_input_tokens": 1.000,
+            "output_tokens": 50.000,
+            "cache_creation_input_tokens": 12.500,
+        },
     },
     "claude": {
         "claude-fable-5": {

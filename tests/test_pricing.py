@@ -462,6 +462,31 @@ def test_calculate_costs_for_gpt_5_6_family_uses_preview_rates(model: str, input
     assert costs["session_total_cost_usd"] == pytest.approx(0.935 * input_rate + output_rate)
 
 
+def test_resolve_pricing_model_handles_gpt_6_astra() -> None:
+    assert resolve_pricing_model("codex", "gpt-6-astra") == "gpt-6-astra"
+    assert resolve_pricing_model("codex", "gpt-6-astra-2026-09-03") == "gpt-6-astra"
+
+
+def test_calculate_costs_for_gpt_6_astra_uses_standard_rates() -> None:
+    costs = calculate_costs(
+        provider="codex",
+        pricing_model="gpt-6-astra",
+        input_tokens=1_000_000,
+        cached_input_tokens=100_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=200_000,
+    )
+
+    # $10/M input, 0.1x cache read, 1.25x cache write, $50/M output. Billable input = 800K.
+    assert costs["input_cost_usd"] == pytest.approx(8.0)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.1)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(1.25)
+    assert costs["output_cost_usd"] == pytest.approx(40.0)
+    assert costs["reasoning_output_cost_usd"] == pytest.approx(10.0)
+    assert costs["session_total_cost_usd"] == pytest.approx(59.35)
+
+
 def test_calculate_costs_returns_zero_breakdown_for_unknown_pricing_models() -> None:
     assert (
         calculate_costs(
