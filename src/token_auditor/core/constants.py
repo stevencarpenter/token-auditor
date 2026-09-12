@@ -188,8 +188,10 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
     # OpenRouter's own, not the upstream provider's list price. OpenRouter reports no
     # one-time cache-write charge for these models, so cache writes are 0.0; Gemini bills
     # cache storage per token per hour, which this per-token schema cannot express.
-    # NOT YET CONSUMED: OpenCode records use the cost the OpenCode DB already reports
-    # (cost_source="provider_billed") and never call calculate_costs, and pi has no parser.
+    # Used ONLY as a fallback for OpenCode rows the OpenCode DB reports no cost for; a
+    # reported cost always wins. OpenRouter routes each request to whichever upstream
+    # endpoint is available, and those endpoints charge different rates, so these
+    # per-model figures do not reproduce actual billing. pi has no parser yet.
     "openrouter": {
         "z-ai/glm-5.3-flash": {
             "input_tokens": 0.150,
