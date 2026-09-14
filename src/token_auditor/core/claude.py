@@ -7,7 +7,7 @@ from typing import cast
 from token_auditor.core.constants import LONG_CONTEXT_INPUT_THRESHOLD
 from token_auditor.core.pricing import calculate_costs, resolve_pricing_model, zero_costs
 from token_auditor.core.types import AuditRecord, ClaudeMessageSnapshot, CostBreakdown, JsonEvent, TokenUsage
-from token_auditor.core.utils import safe_int
+from token_auditor.core.utils import safe_float, safe_int
 
 
 def _mapping(value: object) -> Mapping[str, object]:
@@ -124,15 +124,34 @@ def compute_claude_costs(
     return accumulated, long_context_premium
 
 
+def extract_billed_total(event: JsonEvent) -> float | None:
+    """Return the cumulative cost Claude Code recorded on a cost-state event."""
+    if "totalCostUSD" not in event:
+        return None
+    return safe_float(event.get("totalCostUSD"))
+
+
 def finalize_claude_audit(
     session_id: str,
     deduped_snapshots: Mapping[str, ClaudeMessageSnapshot],
     session_file: Path,
+    billed_total_usd: float | None = None,
 ) -> AuditRecord:
-    """Build the normalized Claude audit payload from deduped snapshots."""
+    """Build the normalized Claude audit payload from deduped snapshots.
+
+    Claude Code writes its own cumulative spend to ``cost-state`` events, and that
+    figure is authoritative: it covers auxiliary-model calls (web search via Haiku),
+    API calls that never persist an assistant message (title generation, compaction),
+    and the 1-hour cache-write rate that the flat ``cache_creation_input_tokens``
+    field does not distinguish from the 5-minute rate. When it is present it replaces
+    the estimated total; the per-component costs stay estimates and will not sum to it.
+    """
     aggregate = aggregate_claude_usage(deduped_snapshots)
     model, pricing_model = _model_metadata(deduped_snapshots)
     costs, long_context_premium = compute_claude_costs(deduped_snapshots)
+
+    if billed_total_usd is not None:
+        costs["session_total_cost_usd"] = billed_total_usd
 
     return {
         "provider": "claude",
@@ -148,9 +167,9 @@ def finalize_claude_audit(
         "output_tokens": aggregate.output_tokens,
         "reasoning_output_tokens": 0,
         "total_tokens": aggregate.total_tokens,
-        "cost_source": "estimated",
-        "provider_billed_total": 0.0,
-        "provider_billed_unit": "",
+        "cost_source": "estimated" if billed_total_usd is None else "provider_billed",
+        "provider_billed_total": 0.0 if billed_total_usd is None else billed_total_usd,
+        "provider_billed_unit": "" if billed_total_usd is None else "usd",
         **costs,
         "long_context_premium_usd": long_context_premium,
     }
@@ -160,10 +179,15 @@ def parse_claude_events(events: tuple[JsonEvent, ...], session_file: Path) -> Au
     """Parse decoded Claude events into an audit payload via pure transforms."""
     session_id = ""
     snapshots: list[ClaudeMessageSnapshot] = []
+    billed_total_usd: float | None = None
 
     for line_number, event in enumerate(events, start=1):
         if "sessionId" in event:
             session_id = str(event.get("sessionId"))
+        # cost-state events are cumulative, so the last one wins.
+        billed = extract_billed_total(event)
+        if billed is not None:
+            billed_total_usd = billed
         snapshot = extract_claude_message_snapshot(event, line_number)
         if snapshot is not None:
             snapshots.append(snapshot)
@@ -172,4 +196,4 @@ def parse_claude_events(events: tuple[JsonEvent, ...], session_file: Path) -> Au
     if not deduped_snapshots:
         return None
 
-    return finalize_claude_audit(session_id, deduped_snapshots, session_file)
+    return finalize_claude_audit(session_id, deduped_snapshots, session_file, billed_total_usd)
