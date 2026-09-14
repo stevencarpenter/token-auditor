@@ -14,12 +14,17 @@ from token_auditor.core.codex import parse_codex_events
 from token_auditor.core.constants import CLAUDE_SESSION_GLOB, CODEX_SESSION_GLOB, OPENCODE_DB_DEFAULT, PROJECT_NAME
 from token_auditor.core.jsonl import decode_jsonl_lines
 from token_auditor.core.opencode import parse_opencode_rows
+from token_auditor.core.pricing import is_unpriced
 from token_auditor.core.render import decide_color_enabled, render_json_audit, render_text_audit
 from token_auditor.core.session_resolution import choose_claude_session_path, claude_project_dir, latest_path
 from token_auditor.core.types import AuditRecord, SessionParseError
 from token_auditor.shell.io_adapters import env_value, glob_paths, has_env, is_tty, path_exists, read_lines, sorted_paths_by_mtime
 
 log = logging.getLogger(__name__)
+
+# Distinct from 1 (discovery/parse failure) so callers can tell "no data" from
+# "data we cannot price".
+UNPRICED_MODEL_EXIT_CODE = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -227,7 +232,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv (Sequence[str] | None): Optional argument vector override.
 
     Returns:
-        int: ``0`` on success, ``1`` when discovery or parsing fails.
+        int: ``0`` on success, ``1`` when discovery or parsing fails, ``3`` when
+            the session names a model that has no pricing table entry.
     """
     args = parse_args(argv)
     configure(args.log_level)
@@ -273,9 +279,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"No token usage data found in session file: {session_file}", file=sys.stderr)
         return 1
 
+    exit_code = 0
+    if is_unpriced(audit):
+        # A zeroed cost breakdown is indistinguishable from a free session, so say
+        # which model is missing and fail the exit code rather than printing $0.00.
+        audit = {**audit, "cost_source": "unpriced"}
+        print(
+            f"No pricing table entry for {args.provider} model {audit['model']!r}: "
+            f"costs are reported as $0 and are not an estimate. "
+            f"Add its rates to TOKEN_PRICING_USD_PER_1M to price this session.",
+            file=sys.stderr,
+        )
+        exit_code = UNPRICED_MODEL_EXIT_CODE
+
     serializer: Callable[[AuditRecord], str] = render_json_audit if args.json else (lambda payload: render_text_audit(payload, _should_use_color()))
     print(serializer(audit))
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

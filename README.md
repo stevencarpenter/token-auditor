@@ -59,6 +59,15 @@ Supported flags:
 - `--json`: emit machine-readable JSON output instead of text.
 - `--log-level`: logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
 
+## Exit Codes
+
+- `0`: audit printed.
+- `1`: session discovery, file access, or parsing failed.
+- `3`: the session names a model with no entry in `TOKEN_PRICING_USD_PER_1M`. The
+  audit still prints, with `cost_source` set to `unpriced` and every cost field at
+  `0`, and the model is named on stderr. A zeroed breakdown means "not priced
+  here", not "free".
+
 `copilot` is intentionally rejected with an error message: Copilot currently lacks a stable structured local usage/cost schema for completed sessions.
 
 ## Session Discovery

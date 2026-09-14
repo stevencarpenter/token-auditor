@@ -1,7 +1,7 @@
 """Pure pricing model resolution and cost arithmetic for token_auditor."""
 
 from token_auditor.core.constants import LONG_CONTEXT_PRICING_USD_PER_1M, MODEL_PRICING_ALIASES, MODEL_PRICING_PREFIX_ALIASES, TOKEN_PRICING_USD_PER_1M
-from token_auditor.core.types import CostBreakdown
+from token_auditor.core.types import AuditRecord, CostBreakdown
 
 
 def resolve_pricing_model(provider: str, model: str) -> str:
@@ -81,3 +81,17 @@ def calculate_costs(
         "reasoning_output_cost_usd": reasoning_output_cost,
         "session_total_cost_usd": session_total_cost,
     }
+
+
+def is_unpriced(audit: AuditRecord) -> bool:
+    """Report whether an audit names a model that no pricing table entry covers.
+
+    ``calculate_costs`` returns zeros for an unresolved model, which renders
+    identically to a genuinely free session. This distinguishes the two so the
+    caller can say so instead of printing a silent $0.00. Provider-billed audits
+    carry an authoritative total and never need a pricing model, so they are
+    never unpriced.
+    """
+    if str(audit.get("cost_source", "")) != "estimated":
+        return False
+    return bool(str(audit.get("model", ""))) and not str(audit.get("pricing_model", ""))
