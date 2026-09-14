@@ -424,3 +424,52 @@ def test_parse_claude_events_includes_long_context_premium_field() -> None:
     assert usage["session_total_cost_usd"] == pytest.approx(0.138)
     # Field is retained by design but is always 0.0 under flat billing.
     assert usage["long_context_premium_usd"] == pytest.approx(0.0)
+
+
+def _billed_events(*, with_cost_state: bool) -> tuple[dict[str, object], ...]:
+    """Build a minimal Opus 5 session, optionally closed by cost-state events."""
+    message = {
+        "sessionId": "billed-session",
+        "timestamp": "2026-03-11T10:00:00Z",
+        "message": {
+            "id": "b1",
+            "model": "claude-opus-5",
+            "usage": {
+                "input_tokens": 100,
+                "cache_read_input_tokens": 1_000,
+                "cache_creation_input_tokens": 2_000,
+                "output_tokens": 500,
+            },
+        },
+    }
+    if not with_cost_state:
+        return (message,)
+    # Cumulative, so the later event wins over the earlier one.
+    return (
+        message,
+        {"type": "cost-state", "totalCostUSD": 1.5},
+        {"type": "cost-state", "totalCostUSD": 2.25},
+    )
+
+
+def test_parse_claude_events_estimates_cost_without_cost_state() -> None:
+    usage = parse_claude_events(_billed_events(with_cost_state=False), Path("/tmp/claude-estimated.jsonl"))
+
+    assert usage is not None
+    # input=100*5/M + cached=1000*0.5/M + creation=2000*6.25/M + output=500*25/M
+    assert usage["session_total_cost_usd"] == pytest.approx(0.026)
+    assert usage["cost_source"] == "estimated"
+    assert usage["provider_billed_total"] == pytest.approx(0.0)
+    assert usage["provider_billed_unit"] == ""
+
+
+def test_parse_claude_events_prefers_latest_cost_state_total() -> None:
+    usage = parse_claude_events(_billed_events(with_cost_state=True), Path("/tmp/claude-billed.jsonl"))
+
+    assert usage is not None
+    assert usage["session_total_cost_usd"] == pytest.approx(2.25)
+    assert usage["cost_source"] == "provider_billed"
+    assert usage["provider_billed_total"] == pytest.approx(2.25)
+    assert usage["provider_billed_unit"] == "usd"
+    # Component costs stay estimates and are not rescaled to the billed total.
+    assert usage["cache_creation_input_cost_usd"] == pytest.approx(0.0125)

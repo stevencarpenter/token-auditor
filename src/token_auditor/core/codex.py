@@ -20,7 +20,8 @@ def _token_usage_from_mapping(total_usage: Mapping[str, object]) -> TokenUsage:
     return TokenUsage(
         input_tokens=safe_int(total_usage.get("input_tokens", 0)),
         cached_input_tokens=safe_int(total_usage.get("cached_input_tokens", 0)),
-        cache_creation_input_tokens=safe_int(total_usage.get("cache_creation_input_tokens", 0)),
+        # Codex names this "cache_write_input_tokens"; the other providers say "cache_creation".
+        cache_creation_input_tokens=safe_int(total_usage.get("cache_write_input_tokens", 0)),
         output_tokens=safe_int(total_usage.get("output_tokens", 0)),
         reasoning_output_tokens=safe_int(total_usage.get("reasoning_output_tokens", 0)),
         total_tokens=safe_int(total_usage.get("total_tokens", 0)),

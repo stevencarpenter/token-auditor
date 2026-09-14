@@ -13,6 +13,7 @@ from tests.conftest import write_session_file
 from token_auditor.core.session_resolution import claude_project_slug
 from token_auditor.core.types import SessionParseError
 from token_auditor.main import (
+    UNPRICED_MODEL_EXIT_CODE,
     _should_use_color,
     main,
     parse_claude_session_usage,
@@ -513,3 +514,55 @@ def test_main_dunder_entrypoint_help(monkeypatch) -> None:
     with pytest.raises(SystemExit) as excinfo:
         runpy.run_module("token_auditor.main", run_name="__main__")
     assert excinfo.value.code == 0
+
+
+def _write_unpriced_codex_session(path: Path) -> None:
+    """Write a Codex session whose model has no pricing table entry."""
+    write_session_file(
+        path,
+        [
+            {"type": "session_meta", "payload": {"id": "unpriced-session"}},
+            {"type": "turn_context", "payload": {"model": "codex-auto-review", "effort": "low"}},
+            {
+                "timestamp": "2026-02-28T08:10:00Z",
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "total_token_usage": {
+                            "input_tokens": 1_615_136,
+                            "cached_input_tokens": 1_441_536,
+                            "cache_write_input_tokens": 0,
+                            "output_tokens": 1_754,
+                            "reasoning_output_tokens": 683,
+                            "total_tokens": 1_616_890,
+                        }
+                    },
+                },
+            },
+        ],
+    )
+
+
+def test_main_reports_unpriced_model_loudly_instead_of_silent_zero(tmp_path: Path, capsys) -> None:
+    session_file = tmp_path / "rollout-unpriced.jsonl"
+    _write_unpriced_codex_session(session_file)
+
+    rc = main(["--provider", "codex", "--session-file", str(session_file)])
+    captured = capsys.readouterr()
+
+    assert rc == UNPRICED_MODEL_EXIT_CODE
+    assert "No pricing table entry for codex model 'codex-auto-review'" in captured.err
+    assert "Cost Source" in captured.out and "unpriced" in captured.out
+
+
+def test_main_json_marks_unpriced_audits(tmp_path: Path, capsys) -> None:
+    session_file = tmp_path / "rollout-unpriced.jsonl"
+    _write_unpriced_codex_session(session_file)
+
+    rc = main(["--provider", "codex", "--session-file", str(session_file), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert rc == UNPRICED_MODEL_EXIT_CODE
+    assert payload["cost_source"] == "unpriced"
+    assert payload["session_total_cost_usd"] == 0.0

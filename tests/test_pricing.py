@@ -3,7 +3,7 @@
 import pytest
 
 from token_auditor.core.constants import FAST_MODE_PRICING_USD_PER_1M, TOKEN_PRICING_USD_PER_1M
-from token_auditor.core.pricing import calculate_costs, resolve_pricing_model, zero_costs
+from token_auditor.core.pricing import calculate_costs, is_unpriced, resolve_pricing_model, zero_costs
 from token_auditor.core.utils import safe_int
 
 
@@ -605,3 +605,16 @@ def test_calculate_costs_long_context_false_uses_standard_rates() -> None:
     assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.625)
     assert costs["output_cost_usd"] == pytest.approx(0.125)
     assert costs["session_total_cost_usd"] == pytest.approx(1.005)
+
+
+def test_is_unpriced_flags_estimated_audits_whose_model_has_no_table_entry() -> None:
+    assert is_unpriced({"model": "codex-auto-review", "pricing_model": "", "cost_source": "estimated"}) is True
+
+
+def test_is_unpriced_ignores_priced_provider_billed_and_modelless_audits() -> None:
+    # A resolved pricing model is priced.
+    assert is_unpriced({"model": "gpt-6-astra", "pricing_model": "gpt-6-astra", "cost_source": "estimated"}) is False
+    # OpenCode/Claude billed audits carry an authoritative total and need no pricing model.
+    assert is_unpriced({"model": "anything", "pricing_model": "", "cost_source": "provider_billed"}) is False
+    # No model means nothing to look up, so there is nothing to warn about.
+    assert is_unpriced({"model": "", "pricing_model": "", "cost_source": "estimated"}) is False
