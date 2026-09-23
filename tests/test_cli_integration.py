@@ -250,7 +250,7 @@ def test_main_prints_latest_codex_session_audit(tmp_path: Path, capsys) -> None:
     assert "Codex Token Audit" in out
     assert "Session ID" in out and "abc" in out
     assert "Input Tokens" in out and "1,042 tokens" in out
-    assert "Total Cost" in out and "$0.00044164" in out
+    assert "Total Cost" in out and "$0.000276025" in out
 
 
 def test_main_prints_latest_claude_session_audit_prefers_current_project(tmp_path: Path, capsys) -> None:

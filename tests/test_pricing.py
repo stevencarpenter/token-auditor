@@ -13,7 +13,7 @@ def test_resolve_pricing_model_matches_direct_table_entries() -> None:
 
 
 def test_resolve_pricing_model_applies_alias_and_prefix_rules() -> None:
-    assert resolve_pricing_model("codex", "gpt-5.3-codex-mini") == "gpt-5.2-codex-mini"
+    assert resolve_pricing_model("codex", "gpt-5.1-codex-max") == "gpt-5.1-codex"
     assert resolve_pricing_model("codex", "gpt-5-codex-2026-02-14") == "gpt-5-codex"
     assert resolve_pricing_model("claude", "claude-sonnet-4-5-20250929") == "claude-sonnet-4-6"
 
@@ -37,8 +37,8 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("codex", "gpt-5.6-luna-2026-06-26") == "gpt-5.6-luna"
     # Bare Claude aliases (logged for some sessions) map to the current fleet.
     assert resolve_pricing_model("claude", "fable") == "claude-fable-5-1"
-    assert resolve_pricing_model("claude", "opus") == "claude-opus-5"
-    assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5"
+    assert resolve_pricing_model("claude", "opus") == "claude-opus-5-5"
+    assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5-5"
     assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5"
     assert resolve_pricing_model("claude", "haiku") == "claude-haiku-4-5"
 
@@ -318,9 +318,11 @@ def test_fast_mode_pricing_table_values_match_documented_multipliers() -> None:
     # otherwise pass CI silently: the dict is line-covered on import but its values are never
     # exercised by calculate_costs. Pin every entry to the documented multipliers so a bad number
     # fails loudly. Per-tier standard multiplier: Opus 4.8 fast mode is 2x standard (the headline
-    # of the 4.8 release); the 4.6/4.7 fast tier is 6x. Within each tier, cache read is 0.1x and
-    # the 5-minute cache write is 1.25x of that tier's fast input rate.
+    # of the 4.8 release); the 4.6/4.7 fast tier is 6x. Within each tier, cache read keeps the
+    # model's standard cache-read ratio (0.05x on Opus 5.5, 0.1x elsewhere) and the 5-minute cache
+    # write is 1.25x of that tier's fast input rate.
     expected_standard_multiplier = {
+        "claude-opus-5-5": 2.0,
         "claude-opus-5": 2.0,
         "claude-opus-4-8": 2.0,
         "claude-opus-4-7": 6.0,
@@ -336,7 +338,8 @@ def test_fast_mode_pricing_table_values_match_documented_multipliers() -> None:
 
         assert fast["input_tokens"] == pytest.approx(multiplier * standard["input_tokens"])
         assert fast["output_tokens"] == pytest.approx(multiplier * standard["output_tokens"])
-        assert fast["cached_input_tokens"] == pytest.approx(0.1 * fast["input_tokens"])
+        cache_read_ratio = standard["cached_input_tokens"] / standard["input_tokens"]
+        assert fast["cached_input_tokens"] == pytest.approx(cache_read_ratio * fast["input_tokens"])
         assert fast["cache_creation_input_tokens"] == pytest.approx(1.25 * fast["input_tokens"])
 
 
@@ -523,6 +526,91 @@ def test_calculate_costs_for_gpt_6_astra_uses_standard_rates() -> None:
     assert costs["output_cost_usd"] == pytest.approx(40.0)
     assert costs["reasoning_output_cost_usd"] == pytest.approx(10.0)
     assert costs["session_total_cost_usd"] == pytest.approx(59.35)
+
+
+def test_resolve_pricing_model_handles_opus_5_5() -> None:
+    assert resolve_pricing_model("claude", "claude-opus-5-5") == "claude-opus-5-5"
+    assert resolve_pricing_model("claude", "claude-opus-5-5[1m]") == "claude-opus-5-5"
+    # A dated Opus 5.5 snapshot must not match the shorter "claude-opus-5" prefix.
+    assert resolve_pricing_model("claude", "claude-opus-5-5-20260915") == "claude-opus-5-5"
+    assert resolve_pricing_model("claude", "claude-opus-5-20260715") == "claude-opus-5"
+
+
+def test_calculate_costs_bills_1h_cache_writes_at_2x_input() -> None:
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-opus-5-5",
+        input_tokens=0,
+        cached_input_tokens=0,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=0,
+        reasoning_output_tokens=0,
+        cache_creation_1h_input_tokens=600_000,
+    )
+
+    # 400K 5-minute writes at $5/M + 600K 1-hour writes at 2 x $4/M.
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(2.0 + 4.8)
+
+
+@pytest.mark.parametrize(
+    ("model", "input_rate", "cached_rate", "output_rate"),
+    (
+        ("gpt-5-codex", 1.25, 0.125, 10.0),
+        ("gpt-5.1-codex", 1.25, 0.125, 10.0),
+        ("gpt-5.1-codex-mini", 0.25, 0.025, 2.0),
+        ("gpt-5.2-codex", 1.75, 0.175, 14.0),
+        ("gpt-5.3-codex", 1.75, 0.175, 14.0),
+    ),
+)
+def test_codex_legacy_model_rates_match_openai_model_pages(model: str, input_rate: float, cached_rate: float, output_rate: float) -> None:
+    pricing = TOKEN_PRICING_USD_PER_1M["codex"][model]
+    assert (pricing["input_tokens"], pricing["cached_input_tokens"], pricing["output_tokens"]) == pytest.approx((input_rate, cached_rate, output_rate))
+
+
+def test_calculate_costs_for_opus_5_5_uses_reduced_cache_read_rate() -> None:
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-opus-5-5",
+        input_tokens=1_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+    )
+
+    # platform.claude.com: $4 input / $5 5m cache write / $20 output; cache reads are 0.05x input.
+    assert costs["input_cost_usd"] == pytest.approx(4.0)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.20)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(5.0)
+    assert costs["output_cost_usd"] == pytest.approx(20.0)
+    assert costs["session_total_cost_usd"] == pytest.approx(29.20)
+
+
+@pytest.mark.parametrize(
+    ("model", "input_rate", "output_rate"),
+    (
+        ("gpt-6-sol", 2.0, 10.0),
+        ("gpt-6-luna", 0.1, 0.5),
+    ),
+)
+def test_calculate_costs_for_gpt_6_sol_and_luna_use_standard_rates(model: str, input_rate: float, output_rate: float) -> None:
+    assert resolve_pricing_model("codex", model) == model
+    assert resolve_pricing_model("codex", f"{model}-2026-09-15") == model
+    costs = calculate_costs(
+        provider="codex",
+        pricing_model=model,
+        input_tokens=1_000_000,
+        cached_input_tokens=100_000,
+        cache_creation_input_tokens=100_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=200_000,
+    )
+
+    # Cache reads are 0.1x input and cache writes are 1.25x input. Billable input = 800K.
+    assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * 0.1 * input_rate)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate)
+    assert costs["session_total_cost_usd"] == pytest.approx(0.935 * input_rate + output_rate)
 
 
 def test_calculate_costs_returns_zero_breakdown_for_unknown_pricing_models() -> None:

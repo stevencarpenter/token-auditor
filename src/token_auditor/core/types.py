@@ -22,6 +22,8 @@ class TokenUsage:
     output_tokens: int = 0
     reasoning_output_tokens: int = 0
     total_tokens: int = 0
+    # Subset of cache_creation_input_tokens written with the 1-hour TTL (Claude only).
+    cache_creation_1h_input_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,8 @@ class CodexDelta:
     reasoning_effort: str | None = None
     timestamp: str | None = None
     usage: TokenUsage | None = None
+    service_tier: str | None = None
+    last_usage: TokenUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,13 @@ class CodexState:
     reasoning_effort: str = ""
     timestamp: str = ""
     usage: TokenUsage | None = None
+    service_tier: str = ""
+    # Usage and costs summed turn by turn; each turn is priced at the model and service tier
+    # active for it. usage above is the latest cumulative total, which can reset mid-session.
+    summed_usage: TokenUsage | None = None
+    costs: CostBreakdown | None = None
+    # Usage logged before any turn_context names a model; priced at the final model.
+    unpriced_usage: TokenUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -54,3 +65,5 @@ class ClaudeMessageSnapshot:
     model: str
     timestamp: str
     usage: TokenUsage
+    speed: str = ""
+    inference_geo: str = ""

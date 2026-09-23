@@ -37,7 +37,10 @@ def extract_claude_message_snapshot(event: JsonEvent, line_number: int) -> Claud
             output_tokens=safe_int(usage.get("output_tokens", 0)),
             reasoning_output_tokens=0,
             total_tokens=0,
+            cache_creation_1h_input_tokens=safe_int(_mapping(usage.get("cache_creation")).get("ephemeral_1h_input_tokens", 0)),
         ),
+        speed=str(usage.get("speed") or ""),
+        inference_geo=str(usage.get("inference_geo") or ""),
     )
 
 
@@ -104,6 +107,9 @@ def compute_claude_costs(
             output_tokens=snapshot.usage.output_tokens,
             reasoning_output_tokens=0,
             long_context=is_long_context,
+            cache_creation_1h_input_tokens=snapshot.usage.cache_creation_1h_input_tokens,
+            speed=snapshot.speed,
+            inference_geo=snapshot.inference_geo,
         )
         for key, value in message_costs.items():
             accumulated[key] += value
@@ -118,6 +124,9 @@ def compute_claude_costs(
                 output_tokens=snapshot.usage.output_tokens,
                 reasoning_output_tokens=0,
                 long_context=False,
+                cache_creation_1h_input_tokens=snapshot.usage.cache_creation_1h_input_tokens,
+                speed=snapshot.speed,
+                inference_geo=snapshot.inference_geo,
             )
             long_context_premium += message_costs["session_total_cost_usd"] - standard_costs["session_total_cost_usd"]
 
@@ -141,10 +150,9 @@ def finalize_claude_audit(
 
     Claude Code writes its own cumulative spend to ``cost-state`` events, and that
     figure is authoritative: it covers auxiliary-model calls (web search via Haiku),
-    API calls that never persist an assistant message (title generation, compaction),
-    and the 1-hour cache-write rate that the flat ``cache_creation_input_tokens``
-    field does not distinguish from the 5-minute rate. When it is present it replaces
-    the estimated total; the per-component costs stay estimates and will not sum to it.
+    and API calls that never persist an assistant message (title generation,
+    compaction). When it is present it replaces the estimated total; the
+    per-component costs stay estimates and will not sum to it.
     """
     aggregate = aggregate_claude_usage(deduped_snapshots)
     model, pricing_model = _model_metadata(deduped_snapshots)

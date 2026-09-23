@@ -104,6 +104,14 @@ Codex token semantics:
   `input_tokens - cached_input_tokens - cache_creation_input_tokens`.
 - Codex CLI's inline footer can show a smaller `total` because it commonly reports `uncached_input + output`, while this auditor reports the session usage
   values from the log.
+- Each `token_count` increment is priced at the model and service tier active for that turn, so sessions that switch models or run on the
+  `priority` (Fast mode) tier are priced turn by turn. Each turn's usage is its `last_token_usage`, so cumulative totals that restart
+  after compaction, and the parent usage a spawned subagent's first total carries, are neither dropped nor double counted.
+
+Claude token semantics:
+
+- Cache writes are priced per message from `usage.cache_creation`: 5-minute writes at 1.25x input and 1-hour writes at 2x input.
+- `usage.speed == "fast"` applies fast mode rates, and `usage.inference_geo == "us"` applies the 1.1x data-residency multiplier.
 
 ## Architecture
 
