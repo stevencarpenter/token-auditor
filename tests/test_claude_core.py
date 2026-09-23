@@ -473,3 +473,44 @@ def test_parse_claude_events_prefers_latest_cost_state_total() -> None:
     assert usage["provider_billed_unit"] == "usd"
     # Component costs stay estimates and are not rescaled to the billed total.
     assert usage["cache_creation_input_cost_usd"] == pytest.approx(0.0125)
+
+
+def test_parse_claude_events_bills_1h_cache_writes_at_2x_input() -> None:
+    usage = parse_claude_events(
+        (
+            {
+                "sessionId": "claude-1h",
+                "message": {
+                    "id": "m1",
+                    "model": "claude-sonnet-4-6",
+                    "usage": {
+                        "input_tokens": 0,
+                        "cache_creation_input_tokens": 1_000_000,
+                        "cache_creation": {"ephemeral_5m_input_tokens": 250_000, "ephemeral_1h_input_tokens": 750_000},
+                        "output_tokens": 0,
+                    },
+                },
+            },
+        ),
+        Path("/tmp/claude-1h.jsonl"),
+    )
+
+    assert usage is not None
+    # Sonnet 4.6: 250K 5-minute writes at $3.75/M + 750K 1-hour writes at 2 x $3/M.
+    assert usage["cache_creation_input_cost_usd"] == pytest.approx(0.9375 + 4.5)
+    assert usage["session_total_cost_usd"] == pytest.approx(5.4375)
+
+
+def test_parse_claude_events_applies_fast_mode_and_us_residency_from_usage() -> None:
+    usage = parse_claude_events(
+        (
+            {"message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1_000_000, "output_tokens": 0, "speed": "fast"}}},
+            {"message": {"id": "m2", "model": "claude-opus-5-5", "usage": {"input_tokens": 1_000_000, "output_tokens": 0, "inference_geo": "us"}}},
+            {"message": {"id": "m3", "model": "claude-opus-5-5", "usage": {"input_tokens": 1_000_000, "output_tokens": 0, "speed": "standard", "inference_geo": "global"}}},
+        ),
+        Path("/tmp/claude-fast-geo.jsonl"),
+    )
+
+    assert usage is not None
+    # Opus 5.5: fast $8/M, US-only 1.1 x $4/M, standard $4/M.
+    assert usage["input_cost_usd"] == pytest.approx(8.0 + 4.4 + 4.0)

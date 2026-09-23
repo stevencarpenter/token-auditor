@@ -14,27 +14,21 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 0.0,
         },
         "gpt-5.1-codex": {
-            "input_tokens": 1.750,
-            "cached_input_tokens": 0.175,
-            "output_tokens": 14.000,
+            "input_tokens": 1.250,
+            "cached_input_tokens": 0.125,
+            "output_tokens": 10.000,
             "cache_creation_input_tokens": 0.0,
         },
         "gpt-5.1-codex-mini": {
-            "input_tokens": 0.400,
-            "cached_input_tokens": 0.040,
-            "output_tokens": 3.200,
+            "input_tokens": 0.250,
+            "cached_input_tokens": 0.025,
+            "output_tokens": 2.000,
             "cache_creation_input_tokens": 0.0,
         },
         "gpt-5.2-codex": {
             "input_tokens": 1.750,
             "cached_input_tokens": 0.175,
             "output_tokens": 14.000,
-            "cache_creation_input_tokens": 0.0,
-        },
-        "gpt-5.2-codex-mini": {
-            "input_tokens": 0.400,
-            "cached_input_tokens": 0.040,
-            "output_tokens": 3.200,
             "cache_creation_input_tokens": 0.0,
         },
         "gpt-5.3-codex": {
@@ -44,7 +38,7 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 0.0,
         },
         # gpt-5.4 / 5.5 are logged bare (no -codex suffix) in current rollout logs.
-        # gpt-5.5 also has a >272K-input long-context tier (2x) that is intentionally
+        # gpt-5.5 also has a >272K-input long-context tier (2x input, 1.5x output) that is intentionally
         # NOT modeled: codex logs only cumulative session usage, not per-request input,
         # so the per-request threshold can't be detected (same reason batch/flex aren't
         # modeled). Standard rates are billed.
@@ -88,8 +82,8 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 0.0,
         },
         # GPT-5.6 family rates (per developers.openai.com). Cache reads are discounted by
-        # 90% and cache writes are billed at 1.25x input. These are promotional rates,
-        # held at least through 2026-11-21; they undercut the GPT-5.5 rates above.
+        # 90% and cache writes are billed at 1.25x input. Sol's rate is promotional, held
+        # at least through 2026-11-21.
         "gpt-5.6-sol": {
             "input_tokens": 4.000,
             "cached_input_tokens": 0.400,
@@ -119,6 +113,21 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 50.000,
             "cache_creation_input_tokens": 12.500,
         },
+        # GPT-6 Sol and Luna (developers.openai.com, fetched 2026-09-22) are single
+        # snapshots like Astra, with the same unmodeled tiers. Their >272K long-context
+        # tier is 2x input/cache and 1.5x output.
+        "gpt-6-sol": {
+            "input_tokens": 2.000,
+            "cached_input_tokens": 0.200,
+            "output_tokens": 10.000,
+            "cache_creation_input_tokens": 2.500,
+        },
+        "gpt-6-luna": {
+            "input_tokens": 0.100,
+            "cached_input_tokens": 0.010,
+            "output_tokens": 0.500,
+            "cache_creation_input_tokens": 0.125,
+        },
     },
     "claude": {
         # Fable 5.1 shares Fable 5's base rates but prices cache reads at 0.025x input
@@ -134,6 +143,13 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cached_input_tokens": 1.00,
             "cache_creation_input_tokens": 12.50,
             "output_tokens": 50.00,
+        },
+        # Opus 5.5 undercuts Opus 5 and prices cache reads at 0.05x input ($0.20/MTok).
+        "claude-opus-5-5": {
+            "input_tokens": 4.00,
+            "cached_input_tokens": 0.20,
+            "cache_creation_input_tokens": 5.00,
+            "output_tokens": 20.00,
         },
         # Opus 5 ships as a drop-in upgrade at Opus 4.8's rates (per platform.claude.com).
         "claude-opus-5": {
@@ -271,13 +287,30 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
     },
 }
 
+# Codex "priority" service tier (renamed Fast mode by OpenAI on 2026-07-30) multiplies every
+# standard rate, per developers.openai.com/api/docs/pricing. Codex records the tier in
+# thread_settings_applied events. Models without a Fast-mode row are billed at standard rates.
+CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
+    "gpt-6-astra": 2.0,
+    "gpt-6-sol": 2.0,
+    "gpt-6-luna": 2.0,
+    "gpt-5.6-sol": 2.0,
+    "gpt-5.6-terra": 2.0,
+    "gpt-5.6-luna": 2.0,
+    "gpt-5.5": 2.5,
+    "gpt-5.4": 2.0,
+    "gpt-5.4-mini": 2.0,
+}
+
 MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
     "codex": {
-        "gpt-5.3-codex-mini": "gpt-5.2-codex-mini",
+        # developers.openai.com lists gpt-5.1-codex-max at gpt-5.1-codex's rates.
+        "gpt-5.1-codex-max": "gpt-5.1-codex",
     },
     "claude": {
         "claude-fable-5-1[1m]": "claude-fable-5-1",
         "claude-fable-5[1m]": "claude-fable-5",
+        "claude-opus-5-5[1m]": "claude-opus-5-5",
         "claude-opus-5[1m]": "claude-opus-5",
         "claude-opus-4-8[1m]": "claude-opus-4-8",
         "claude-opus-4-7[1m]": "claude-opus-4-7",
@@ -288,8 +321,8 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         # Bare aliases are logged for some sessions (e.g. subagents); map each tier to
         # its current fleet member.
         "fable": "claude-fable-5-1",
-        "opus": "claude-opus-5",
-        "opus[1m]": "claude-opus-5",
+        "opus": "claude-opus-5-5",
+        "opus[1m]": "claude-opus-5-5",
         "sonnet": "claude-sonnet-5",
         "haiku": "claude-haiku-4-5",
     },
@@ -304,6 +337,8 @@ MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
         # or a dated Fable 5.1 snapshot resolves to Fable 5 and misprices cache reads 4x.
         ("claude-fable-5-1", "claude-fable-5-1"),
         ("claude-fable-5", "claude-fable-5"),
+        # Same trap: "claude-opus-5-5" must precede "claude-opus-5" (Opus 5 costs 1.25x).
+        ("claude-opus-5-5", "claude-opus-5-5"),
         ("claude-opus-5", "claude-opus-5"),
         ("claude-opus-4-8", "claude-opus-4-8"),
         ("claude-opus-4-7", "claude-opus-4-7"),
@@ -318,7 +353,7 @@ MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
 
 LONG_CONTEXT_INPUT_THRESHOLD: int = 200_000
 
-# Long-context (>200K input) pricing. As of Opus 5, Opus 4.6/4.7/4.8 and Sonnet 4.6, Anthropic
+# Long-context (>200K input) pricing. As of Opus 5.5, Opus 5, Opus 4.6/4.7/4.8 and Sonnet 4.6, Anthropic
 # bills the full 1M context window at *standard* rates — there is no >200K surcharge
 # (https://platform.claude.com/docs/en/about-claude/pricing, which states these models
 # "include the full 1M token context window at standard pricing"). These entries therefore
@@ -328,6 +363,7 @@ LONG_CONTEXT_INPUT_THRESHOLD: int = 200_000
 LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     "claude-fable-5-1": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5-1"],
     "claude-fable-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5"],
+    "claude-opus-5-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-5-5"],
     "claude-opus-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-5"],
     "claude-opus-4-8": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-4-8"],
     "claude-opus-4-7": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-4-7"],
@@ -336,14 +372,20 @@ LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     "claude-sonnet-4-6": TOKEN_PRICING_USD_PER_1M["claude"]["claude-sonnet-4-6"],
 }
 
-# Not wired into computation. JSONL model IDs do not distinguish fast from standard mode.
-# Fast mode includes 1M context at no additional charge. The multiplier is NOT uniform:
-# Opus 4.6/4.7 fast mode is 6x standard ($30 in / $150 out), but Opus 4.8 and Opus 5 fast mode
-# are far cheaper at 2x standard ($10 in / $50 out) — the headline of the 4.8 release. Cache read /
-# 5-min cache write keep the standard 0.1x / 1.25x multipliers off each tier's fast input rate.
-# Fast mode on Opus 5 is Claude-API-only (not Bedrock/Vertex/Foundry); Opus 4.7 fast mode has
-# since been withdrawn, but its rates are kept here for auditing historical sessions.
+# Applied when a message's usage.speed is "fast"; model IDs do not distinguish fast mode. Fast mode includes 1M context at no additional charge. The
+# multiplier is NOT uniform: Opus 4.6/4.7 fast mode was 6x standard ($30 in / $150 out), while
+# Opus 4.8, Opus 5, and Opus 5.5 fast mode is 2x standard ($10/$50, $10/$50, $8/$40). Cache read
+# and 5-min cache write keep each model's standard multipliers off its fast input rate (0.05x
+# cache read on Opus 5.5, 0.1x elsewhere; 1.25x cache write). Fast mode is Claude-API-only.
+# Opus 4.7 fast mode has been withdrawn and Opus 4.6 fast requests now run and bill at standard
+# rates; their rates are kept here for auditing historical sessions.
 FAST_MODE_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
+    "claude-opus-5-5": {
+        "input_tokens": 8.00,
+        "cached_input_tokens": 0.40,
+        "cache_creation_input_tokens": 10.00,
+        "output_tokens": 40.00,
+    },
     "claude-opus-5": {
         "input_tokens": 10.00,
         "cached_input_tokens": 1.00,
@@ -370,13 +412,11 @@ FAST_MODE_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     },
 }
 
-# Not wired into computation. Default 5min (1.25x) cache write rates are used.
-# If Claude Code uses 1hr cache TTL, cache_creation_input_tokens rates should be updated
-# to 2.0x base input instead of the current 1.25x.
+# 1-hour cache writes bill at 2x base input on every Claude model. The tables above hold the
+# 5-minute (1.25x) rate; calculate_costs applies this to usage.cache_creation.ephemeral_1h_input_tokens.
 CACHE_WRITE_1HR_MULTIPLIER: float = 2.0
 
-# Not wired into computation. Applies when inference_geo is set to US-only.
-# Not detectable from JSONL session data.
+# Applied to every Claude rate when a message's usage.inference_geo is "us" (Claude 4.6 and later).
 DATA_RESIDENCY_MULTIPLIER: float = 1.1
 
 EVERFOREST_HEADER_COLOR_256 = 108
