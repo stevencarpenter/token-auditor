@@ -39,7 +39,7 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("claude", "fable") == "claude-fable-5-1"
     assert resolve_pricing_model("claude", "opus") == "claude-opus-5-5"
     assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5-5"
-    assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5"
+    assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5-5"
     assert resolve_pricing_model("claude", "haiku") == "claude-haiku-4-5"
 
 
@@ -48,6 +48,29 @@ def test_resolve_pricing_model_handles_sonnet_5() -> None:
     assert resolve_pricing_model("claude", "claude-sonnet-5") == "claude-sonnet-5"
     assert resolve_pricing_model("claude", "claude-sonnet-5[1m]") == "claude-sonnet-5"
     assert resolve_pricing_model("claude", "claude-sonnet-5-20260701") == "claude-sonnet-5"
+
+
+def test_sonnet_5_5_resolution_and_pricing() -> None:
+    assert resolve_pricing_model("claude", "claude-sonnet-5-5") == "claude-sonnet-5-5"
+    assert resolve_pricing_model("claude", "claude-sonnet-5-5[1m]") == "claude-sonnet-5-5"
+    assert resolve_pricing_model("claude", "claude-sonnet-5-5-20260928") == "claude-sonnet-5-5"
+    assert resolve_pricing_model("claude", "claude-sonnet-5-20260701") == "claude-sonnet-5"
+
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-sonnet-5-5",
+        input_tokens=1_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+        long_context=True,
+    )
+    assert costs["input_cost_usd"] == pytest.approx(2.00)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.20)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(2.50)
+    assert costs["output_cost_usd"] == pytest.approx(10.00)
+    assert costs["session_total_cost_usd"] == pytest.approx(14.70)
 
 
 def test_calculate_costs_for_sonnet_5_uses_introductory_rates() -> None:
