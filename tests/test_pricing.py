@@ -610,13 +610,17 @@ def test_calculate_costs_for_opus_5_5_uses_reduced_cache_read_rate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("model", "input_rate", "output_rate"),
+    ("model", "input_rate", "cached_rate", "output_rate"),
     (
-        ("gpt-6-sol", 2.0, 10.0),
-        ("gpt-6-luna", 0.1, 0.5),
+        ("gpt-6-sol", 2.0, 0.2, 10.0),
+        ("gpt-6.1-sol", 2.0, 0.1, 10.0),
+        ("gpt-6-luna", 0.1, 0.01, 0.5),
     ),
 )
-def test_calculate_costs_for_gpt_6_sol_and_luna_use_standard_rates(model: str, input_rate: float, output_rate: float) -> None:
+@pytest.mark.parametrize(("service_tier", "multiplier"), (("", 1.0), ("priority", 2.0)))
+def test_calculate_costs_for_gpt_6_sol_and_luna_use_documented_rates(
+    model: str, input_rate: float, cached_rate: float, output_rate: float, service_tier: str, multiplier: float
+) -> None:
     assert resolve_pricing_model("codex", model) == model
     assert resolve_pricing_model("codex", f"{model}-2026-09-15") == model
     costs = calculate_costs(
@@ -627,13 +631,16 @@ def test_calculate_costs_for_gpt_6_sol_and_luna_use_standard_rates(model: str, i
         cache_creation_input_tokens=100_000,
         output_tokens=1_000_000,
         reasoning_output_tokens=200_000,
+        service_tier=service_tier,
     )
 
-    # Cache reads are 0.1x input and cache writes are 1.25x input. Billable input = 800K.
-    assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * 0.1 * input_rate)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate)
-    assert costs["session_total_cost_usd"] == pytest.approx(0.935 * input_rate + output_rate)
+    # Cache writes are 1.25x input. Billable input = 800K; Fast mode doubles every rate.
+    assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate * multiplier)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * cached_rate * multiplier)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate * multiplier)
+    assert costs["output_cost_usd"] == pytest.approx(0.8 * output_rate * multiplier)
+    assert costs["reasoning_output_cost_usd"] == pytest.approx(0.2 * output_rate * multiplier)
+    assert costs["session_total_cost_usd"] == pytest.approx((0.925 * input_rate + 0.1 * cached_rate + output_rate) * multiplier)
 
 
 def test_calculate_costs_returns_zero_breakdown_for_unknown_pricing_models() -> None:

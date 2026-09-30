@@ -122,6 +122,13 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 10.000,
             "cache_creation_input_tokens": 2.500,
         },
+        # https://developers.openai.com/api/docs/models/gpt-6.1-sol (verified 2026-09-29).
+        "gpt-6.1-sol": {
+            "input_tokens": 2.000,
+            "cached_input_tokens": 0.100,
+            "output_tokens": 10.000,
+            "cache_creation_input_tokens": 2.500,
+        },
         "gpt-6-luna": {
             "input_tokens": 0.100,
             "cached_input_tokens": 0.010,
@@ -299,6 +306,7 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
 CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
     "gpt-6-astra": 2.0,
     "gpt-6-sol": 2.0,
+    "gpt-6.1-sol": 2.0,
     "gpt-6-luna": 2.0,
     "gpt-5.6-sol": 2.0,
     "gpt-5.6-terra": 2.0,
