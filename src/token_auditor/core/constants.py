@@ -7,6 +7,10 @@ OPENCODE_DB_DEFAULT = "~/.local/share/opencode/opencode.db"
 
 TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
     "codex": {
+        # RETIRED: gpt-5-codex, gpt-5.1-codex, gpt-5.1-codex-mini, gpt-5.1-codex-max (alias
+        # below) and gpt-5.2-codex were shut down by OpenAI on 2026-07-23
+        # (developers.openai.com/api/docs/deprecations), and the pricing page no longer lists
+        # them. The rates stay so old rollout logs still price; do not use them for new models.
         "gpt-5-codex": {
             "input_tokens": 1.250,
             "cached_input_tokens": 0.125,
@@ -31,6 +35,7 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 14.000,
             "cache_creation_input_tokens": 0.0,
         },
+        # Deprecated: OpenAI shuts down gpt-5.3-codex and gpt-5.4-nano on 2027-04-01.
         "gpt-5.3-codex": {
             "input_tokens": 1.750,
             "cached_input_tokens": 0.175,
@@ -183,9 +188,10 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cache_creation_input_tokens": 6.25,
             "output_tokens": 25.00,
         },
+        # Sonnet 5.5 prices cache reads at 0.05x input ($0.10/MTok), unlike Sonnet 5's 0.1x.
         "claude-sonnet-5-5": {
             "input_tokens": 2.00,
-            "cached_input_tokens": 0.20,
+            "cached_input_tokens": 0.10,
             "cache_creation_input_tokens": 2.50,
             "output_tokens": 10.00,
         },
@@ -203,6 +209,14 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "cached_input_tokens": 0.30,
             "cache_creation_input_tokens": 3.75,
             "output_tokens": 15.00,
+        },
+        # Haiku 5.5 rates apply to prompts up to 100K tokens; larger prompts use the tier in
+        # LONG_CONTEXT_PRICING_USD_PER_1M (platform.claude.com, fetched 2026-10-17).
+        "claude-haiku-5-5": {
+            "input_tokens": 0.10,
+            "cached_input_tokens": 0.01,
+            "cache_creation_input_tokens": 0.125,
+            "output_tokens": 0.50,
         },
         "claude-haiku-4-5": {
             "input_tokens": 1.00,
@@ -312,24 +326,29 @@ CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
     "gpt-5.6-terra": 2.0,
     "gpt-5.6-luna": 2.0,
     "gpt-5.5": 2.5,
+    "gpt-5.3-codex": 2.0,
     "gpt-5.4": 2.0,
     "gpt-5.4-mini": 2.0,
 }
 
 MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
     "codex": {
-        # developers.openai.com lists gpt-5.1-codex-max at gpt-5.1-codex's rates.
+        # Retired 2026-07-23. OpenAI listed gpt-5.1-codex-max at gpt-5.1-codex's rates.
         "gpt-5.1-codex-max": "gpt-5.1-codex",
     },
     "claude": {
         "claude-fable-5-1[1m]": "claude-fable-5-1",
         "claude-fable-5[1m]": "claude-fable-5",
         "claude-opus-5-5[1m]": "claude-opus-5-5",
+        "claude-haiku-5-5[1m]": "claude-haiku-5-5",
         "claude-opus-5[1m]": "claude-opus-5",
         "claude-opus-4-8[1m]": "claude-opus-4-8",
         "claude-opus-4-7[1m]": "claude-opus-4-7",
         "claude-sonnet-5-5[1m]": "claude-sonnet-5-5",
         "claude-sonnet-5[1m]": "claude-sonnet-5",
+        # Opus 4.5 matches Opus 4.6's rates. Sonnet 4.5 is deprecated and retires on
+        # 2026-11-30; it matches Sonnet 4.6's rates. Anthropic has retired no other Claude model
+        # this table prices (Opus 4/4.1, Sonnet 4/3.7 and Haiku 3.5/3 were never listed).
         "claude-opus-4-5": "claude-opus-4-6",
         "claude-sonnet-4-5": "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001": "claude-haiku-4-5",
@@ -339,7 +358,9 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         "opus": "claude-opus-5-5",
         "opus[1m]": "claude-opus-5-5",
         "sonnet": "claude-sonnet-5-5",
-        "haiku": "claude-haiku-4-5",
+        # code.claude.com/docs/en/model-config: `haiku` is Haiku 5.5 on the Anthropic API
+        # and Haiku 4.5 on Bedrock, Google Cloud and Foundry.
+        "haiku": "claude-haiku-5-5",
     },
     "opencode": {},
     "openrouter": {},
@@ -361,6 +382,7 @@ MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
         ("claude-sonnet-5", "claude-sonnet-5"),
         ("claude-opus-4-5", "claude-opus-4-6"),
         ("claude-sonnet-4-5", "claude-sonnet-4-6"),
+        ("claude-haiku-5-5", "claude-haiku-5-5"),
         ("claude-haiku-4-5", "claude-haiku-4-5"),
     ),
     "opencode": (),
@@ -368,6 +390,10 @@ MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 LONG_CONTEXT_INPUT_THRESHOLD: int = 200_000
+
+# Haiku 5.5 is the one model with a real long-context tier: prompts over 100K tokens (input +
+# cache reads + cache writes) bill at the higher rates below. Other models keep the default.
+LONG_CONTEXT_INPUT_THRESHOLD_BY_MODEL: dict[str, int] = {"claude-haiku-5-5": 100_000}
 
 # Long-context (>200K input) pricing. As of Opus 5.5, Opus 5, Opus 4.6/4.7/4.8 and Sonnet 4.6, Anthropic
 # bills the full 1M context window at *standard* rates — there is no >200K surcharge
@@ -387,6 +413,12 @@ LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
     "claude-sonnet-5-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-sonnet-5-5"],
     "claude-sonnet-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-sonnet-5"],
     "claude-sonnet-4-6": TOKEN_PRICING_USD_PER_1M["claude"]["claude-sonnet-4-6"],
+    "claude-haiku-5-5": {
+        "input_tokens": 0.50,
+        "cached_input_tokens": 0.05,
+        "cache_creation_input_tokens": 0.625,
+        "output_tokens": 2.50,
+    },
 }
 
 # Applied when a message's usage.speed is "fast"; model IDs do not distinguish fast mode. Fast mode includes 1M context at no additional charge. The

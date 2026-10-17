@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-from token_auditor.core.constants import LONG_CONTEXT_INPUT_THRESHOLD
+from token_auditor.core.constants import LONG_CONTEXT_INPUT_THRESHOLD, LONG_CONTEXT_INPUT_THRESHOLD_BY_MODEL
 from token_auditor.core.pricing import calculate_costs, resolve_pricing_model, zero_costs
 from token_auditor.core.types import AuditRecord, ClaudeMessageSnapshot, CostBreakdown, JsonEvent, TokenUsage
 from token_auditor.core.utils import safe_float, safe_int
@@ -96,7 +96,7 @@ def compute_claude_costs(
     for snapshot in deduped_snapshots.values():
         message_pricing_model = resolve_pricing_model("claude", snapshot.model)
         total_input = snapshot.usage.input_tokens + snapshot.usage.cached_input_tokens + snapshot.usage.cache_creation_input_tokens
-        is_long_context = total_input > LONG_CONTEXT_INPUT_THRESHOLD
+        is_long_context = total_input > LONG_CONTEXT_INPUT_THRESHOLD_BY_MODEL.get(message_pricing_model, LONG_CONTEXT_INPUT_THRESHOLD)
 
         message_costs = calculate_costs(
             provider="claude",

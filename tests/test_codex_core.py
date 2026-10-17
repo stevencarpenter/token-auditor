@@ -205,11 +205,14 @@ def test_parse_codex_events_prices_each_turn_at_its_model_and_service_tier() -> 
 
 def test_calculate_costs_priority_tier_uses_per_model_fast_multiplier() -> None:
     fast = calculate_costs("codex", "gpt-5.5", 1_000_000, 0, 0, 1_000_000, 0, service_tier="priority")
-    unlisted = calculate_costs("codex", "gpt-5.3-codex", 1_000_000, 0, 0, 1_000_000, 0, service_tier="priority")
+    codex_fast = calculate_costs("codex", "gpt-5.3-codex", 1_000_000, 0, 0, 1_000_000, 0, service_tier="priority")
+    unlisted = calculate_costs("codex", "gpt-5.4-nano", 1_000_000, 0, 0, 1_000_000, 0, service_tier="priority")
 
-    # gpt-5.5 Fast mode is 2.5x ($12.50 / $75); models without a Fast-mode row bill at standard.
+    # gpt-5.5 Fast mode is 2.5x ($12.50 / $75); gpt-5.3-codex is 2x ($3.50 / $28);
+    # models without a Fast-mode row bill at standard.
     assert fast["session_total_cost_usd"] == pytest.approx(87.50)
-    assert unlisted["session_total_cost_usd"] == pytest.approx(15.75)
+    assert codex_fast["session_total_cost_usd"] == pytest.approx(31.50)
+    assert unlisted["session_total_cost_usd"] == pytest.approx(1.45)
 
 
 def test_parse_codex_events_counts_usage_across_a_cumulative_total_restart() -> None:
