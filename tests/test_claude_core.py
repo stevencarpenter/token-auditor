@@ -353,6 +353,28 @@ def test_compute_claude_costs_mixed_model_over_200k_bills_flat() -> None:
     assert premium == pytest.approx(0.0)
 
 
+def test_compute_claude_costs_haiku_5_5_over_100k_prompt_uses_higher_tier() -> None:
+    """Haiku 5.5 prompt length counts cache reads, and its threshold is 100K, not 200K."""
+
+    def premium_for(cache_read_tokens: int) -> float:
+        snapshot = extract_claude_message_snapshot(
+            {
+                "timestamp": "t1",
+                "message": {
+                    "id": "h55",
+                    "model": "claude-haiku-5-5",
+                    "usage": {"input_tokens": 10_000, "cache_read_input_tokens": cache_read_tokens, "output_tokens": 1_000},
+                },
+            },
+            1,
+        )
+        assert snapshot is not None
+        return compute_claude_costs(reduce_message_snapshots((snapshot,)))[1]
+
+    assert premium_for(90_000) == pytest.approx(0.0)  # 100K prompt is not over the threshold.
+    assert premium_for(100_000) > 0.0  # 110K prompt, counting cache reads.
+
+
 def test_compute_claude_costs_single_model_matches_per_message_sum() -> None:
     """Per-message path produces same result as old aggregate path for under-200K sessions."""
     m1 = extract_claude_message_snapshot(

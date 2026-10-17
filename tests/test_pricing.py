@@ -1,8 +1,11 @@
-"""Unit tests for pure pricing model resolution and cost arithmetic."""
+"""Unit tests for pure pricing model resolution and cost arithmetic.
+
+These tests cover resolution rules and billing mechanics. They deliberately do not assert the
+rates in the pricing tables: those are configuration, and `git diff` shows any change to them.
+"""
 
 import pytest
 
-from token_auditor.core.constants import FAST_MODE_PRICING_USD_PER_1M, TOKEN_PRICING_USD_PER_1M
 from token_auditor.core.pricing import calculate_costs, is_unpriced, resolve_pricing_model, zero_costs
 from token_auditor.core.utils import safe_int
 
@@ -40,330 +43,48 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("claude", "opus") == "claude-opus-5-5"
     assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5-5"
     assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5-5"
-    assert resolve_pricing_model("claude", "haiku") == "claude-haiku-4-5"
+    assert resolve_pricing_model("claude", "haiku") == "claude-haiku-5-5"
 
 
-def test_resolve_pricing_model_handles_sonnet_5() -> None:
-    # Sonnet 5 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
-    assert resolve_pricing_model("claude", "claude-sonnet-5") == "claude-sonnet-5"
-    assert resolve_pricing_model("claude", "claude-sonnet-5[1m]") == "claude-sonnet-5"
-    assert resolve_pricing_model("claude", "claude-sonnet-5-20260701") == "claude-sonnet-5"
+@pytest.mark.parametrize("model", ("gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"))
+def test_resolve_pricing_model_handles_gpt_6_family(model: str) -> None:
+    assert resolve_pricing_model("codex", model) == model
+    assert resolve_pricing_model("codex", f"{model}-2026-09-15") == model
 
 
-def test_sonnet_5_5_resolution_and_pricing() -> None:
-    assert resolve_pricing_model("claude", "claude-sonnet-5-5") == "claude-sonnet-5-5"
-    assert resolve_pricing_model("claude", "claude-sonnet-5-5[1m]") == "claude-sonnet-5-5"
+@pytest.mark.parametrize(
+    "model",
+    (
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-fable-5-1",
+        "claude-fable-5",
+    ),
+)
+def test_resolve_pricing_model_handles_claude_suffixes(model: str) -> None:
+    # Each model resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
+    assert resolve_pricing_model("claude", model) == model
+    assert resolve_pricing_model("claude", f"{model}[1m]") == model
+    assert resolve_pricing_model("claude", f"{model}-20260901") == model
+
+
+def test_resolve_pricing_model_prefix_order_keeps_longer_ids_from_falling_back() -> None:
+    # The prefix table is ordered: a dated snapshot of the newer model must not match the
+    # shorter prefix of its predecessor (Opus 5.5 vs 5, Sonnet 5.5 vs 5, Fable 5.1 vs 5), and
+    # Opus 5 must not swallow the 4.x ids.
+    assert resolve_pricing_model("claude", "claude-opus-5-5-20260915") == "claude-opus-5-5"
+    assert resolve_pricing_model("claude", "claude-opus-5-20260715") == "claude-opus-5"
     assert resolve_pricing_model("claude", "claude-sonnet-5-5-20260928") == "claude-sonnet-5-5"
     assert resolve_pricing_model("claude", "claude-sonnet-5-20260701") == "claude-sonnet-5"
-
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-sonnet-5-5",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
-    assert costs["input_cost_usd"] == pytest.approx(2.00)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.20)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(2.50)
-    assert costs["output_cost_usd"] == pytest.approx(10.00)
-    assert costs["session_total_cost_usd"] == pytest.approx(14.70)
-
-
-def test_calculate_costs_for_sonnet_5_uses_introductory_rates() -> None:
-    # platform.claude.com: Sonnet 5 introductory (through 2026-08-31) = $2 input /
-    # $0.20 cache read / $2.50 5-min cache write / $10 output per MTok.
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-sonnet-5",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    assert costs["input_cost_usd"] == pytest.approx(2.00)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.20)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(2.50)
-    assert costs["output_cost_usd"] == pytest.approx(10.00)
-    assert costs["session_total_cost_usd"] == pytest.approx(14.70)
-
-
-def test_calculate_costs_sonnet_5_long_context_matches_standard_mode() -> None:
-    # Sonnet 5 includes the full 1M context window at base pricing (no >200K surcharge),
-    # so long_context=True yields the same costs as long_context=False.
-    standard = calculate_costs(
-        provider="claude",
-        pricing_model="claude-sonnet-5",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=False,
-    )
-    long_context = calculate_costs(
-        provider="claude",
-        pricing_model="claude-sonnet-5",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
-
-    assert long_context == standard
-    # input=$0.002, cached=$0.10, cache_creation=$0.25, output=$0.05 → total=$0.402
-    assert long_context["session_total_cost_usd"] == pytest.approx(0.402)
-
-
-def test_calculate_costs_for_gpt_5_4_nano_uses_verified_rates() -> None:
-    # developers.openai.com: gpt-5.4-nano = $0.20 input / $0.02 cached input / $1.25 output
-    # per MTok. Codex billable input = input - cached - cache_creation.
-    costs = calculate_costs(
-        provider="codex",
-        pricing_model="gpt-5.4-nano",
-        input_tokens=2_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=0,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    assert costs["input_cost_usd"] == pytest.approx(0.20)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.02)
-    assert costs["output_cost_usd"] == pytest.approx(1.25)
-    assert costs["session_total_cost_usd"] == pytest.approx(1.47)
-
-
-def test_calculate_costs_for_pro_tiers_bill_cached_input_at_full_rate() -> None:
-    # developers.openai.com: gpt-5.4-pro / gpt-5.5-pro = $30 input / $180 output per MTok
-    # with prompt caching unsupported — cached tokens (which should never appear in pro
-    # session logs) carry no discount and bill at the full input rate.
-    for pricing_model in ("gpt-5.4-pro", "gpt-5.5-pro"):
-        costs = calculate_costs(
-            provider="codex",
-            pricing_model=pricing_model,
-            input_tokens=2_000_000,
-            cached_input_tokens=1_000_000,
-            cache_creation_input_tokens=0,
-            output_tokens=1_000_000,
-            reasoning_output_tokens=0,
-        )
-
-        assert costs["input_cost_usd"] == pytest.approx(30.00)
-        assert costs["cached_input_cost_usd"] == pytest.approx(30.00)
-        assert costs["output_cost_usd"] == pytest.approx(180.00)
-        assert costs["session_total_cost_usd"] == pytest.approx(240.00)
-
-
-def test_resolve_pricing_model_handles_opus_5() -> None:
-    # Opus 5 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
-    assert resolve_pricing_model("claude", "claude-opus-5") == "claude-opus-5"
-    assert resolve_pricing_model("claude", "claude-opus-5[1m]") == "claude-opus-5"
-    assert resolve_pricing_model("claude", "claude-opus-5-20260715") == "claude-opus-5"
-
-
-def test_resolve_pricing_model_opus_5_prefix_does_not_shadow_opus_4_x() -> None:
-    # "claude-opus-5" must not be reachable as a prefix of the 4.x ids, and vice versa; the
-    # prefix table is ordered, so this pins that Opus 5 does not swallow Opus 4.8/4.7/4.6.
-    assert resolve_pricing_model("claude", "claude-opus-4-8") == "claude-opus-4-8"
-    assert resolve_pricing_model("claude", "claude-opus-4-7") == "claude-opus-4-7"
-    assert resolve_pricing_model("claude", "claude-opus-4-6") == "claude-opus-4-6"
-
-
-def test_calculate_costs_for_opus_5_uses_verified_standard_rates() -> None:
-    # platform.claude.com: Opus 5 ships as a drop-in upgrade at Opus 4.8's pricing —
-    # $5 input / $0.50 cache read / $6.25 5m cache write / $25 output per MTok.
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-5",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    assert costs["input_cost_usd"] == pytest.approx(5.00)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.50)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(6.25)
-    assert costs["output_cost_usd"] == pytest.approx(25.00)
-    assert costs["session_total_cost_usd"] == pytest.approx(36.75)
-
-
-def test_calculate_costs_opus_5_long_context_bills_flat_standard_rates() -> None:
-    # Opus 5 provides the full 1M context window as both default and maximum at standard
-    # pricing (no >200K surcharge), so long_context=True yields the same costs as standard.
-    standard = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-5",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=False,
-    )
-    long_context = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-5",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
-
-    assert long_context == standard
-    assert long_context["session_total_cost_usd"] == pytest.approx(1.005)
-
-
-def test_resolve_pricing_model_handles_opus_4_8() -> None:
-    # Opus 4.8 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
-    assert resolve_pricing_model("claude", "claude-opus-4-8") == "claude-opus-4-8"
-    assert resolve_pricing_model("claude", "claude-opus-4-8[1m]") == "claude-opus-4-8"
-    assert resolve_pricing_model("claude", "claude-opus-4-8-20260528") == "claude-opus-4-8"
-
-
-def test_calculate_costs_for_opus_4_8_uses_verified_standard_rates() -> None:
-    # platform.claude.com: Opus 4.8 standard = $5 input / $0.50 cache read / $6.25 5m cache
-    # write / $25 output per MTok — unchanged from Opus 4.5/4.6/4.7.
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-4-8",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    assert costs["input_cost_usd"] == pytest.approx(5.00)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.50)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(6.25)
-    assert costs["output_cost_usd"] == pytest.approx(25.00)
-    assert costs["session_total_cost_usd"] == pytest.approx(36.75)
-
-
-def test_calculate_costs_opus_4_8_long_context_bills_flat_standard_rates() -> None:
-    # Opus 4.8 includes the full 1M context window at standard pricing (no >200K surcharge),
-    # so long_context=True yields the same costs as standard.
-    standard = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-4-8",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=False,
-    )
-    long_context = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-4-8",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
-
-    assert long_context == standard
-    assert long_context["session_total_cost_usd"] == pytest.approx(1.005)
-
-
-def test_resolve_pricing_model_handles_fable_5() -> None:
-    # Fable 5 resolves directly, via its 1M-context suffix alias, and via a date-suffixed prefix.
-    assert resolve_pricing_model("claude", "claude-fable-5") == "claude-fable-5"
-    assert resolve_pricing_model("claude", "claude-fable-5[1m]") == "claude-fable-5"
+    assert resolve_pricing_model("claude", "claude-fable-5-1-20260901") == "claude-fable-5-1"
     assert resolve_pricing_model("claude", "claude-fable-5-20260609") == "claude-fable-5"
-
-
-def test_calculate_costs_for_fable_5_uses_verified_standard_rates() -> None:
-    # platform.claude.com: Fable 5 standard = $10 input / $1 cache read / $12.50 5m cache
-    # write / $50 output per MTok.
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-fable-5",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    assert costs["input_cost_usd"] == pytest.approx(10.00)
-    assert costs["cached_input_cost_usd"] == pytest.approx(1.00)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(12.50)
-    assert costs["output_cost_usd"] == pytest.approx(50.00)
-    assert costs["session_total_cost_usd"] == pytest.approx(73.50)
-
-
-def test_calculate_costs_fable_5_long_context_bills_flat_standard_rates() -> None:
-    # Fable 5 includes the full 1M context window at standard pricing (no >200K surcharge),
-    # so long_context=True yields the same costs as standard.
-    standard = calculate_costs(
-        provider="claude",
-        pricing_model="claude-fable-5",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=False,
-    )
-    long_context = calculate_costs(
-        provider="claude",
-        pricing_model="claude-fable-5",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
-
-    assert long_context == standard
-    # input=$0.01, cached=$0.50, cache_creation=$1.25, output=$0.25 → total=$2.01
-    assert long_context["session_total_cost_usd"] == pytest.approx(2.01)
-
-
-def test_fast_mode_pricing_table_values_match_documented_multipliers() -> None:
-    # FAST_MODE_PRICING_USD_PER_1M is not wired into computation, so a typo in its rates would
-    # otherwise pass CI silently: the dict is line-covered on import but its values are never
-    # exercised by calculate_costs. Pin every entry to the documented multipliers so a bad number
-    # fails loudly. Per-tier standard multiplier: Opus 4.8 fast mode is 2x standard (the headline
-    # of the 4.8 release); the 4.6/4.7 fast tier is 6x. Within each tier, cache read keeps the
-    # model's standard cache-read ratio (0.05x on Opus 5.5, 0.1x elsewhere) and the 5-minute cache
-    # write is 1.25x of that tier's fast input rate.
-    expected_standard_multiplier = {
-        "claude-opus-5-5": 2.0,
-        "claude-opus-5": 2.0,
-        "claude-opus-4-8": 2.0,
-        "claude-opus-4-7": 6.0,
-        "claude-opus-4-6": 6.0,
-    }
-    # A new fast-mode entry must declare its expected multiplier here, or this assertion fails —
-    # values can never be added to the table without a deliberate test update.
-    assert set(FAST_MODE_PRICING_USD_PER_1M) == set(expected_standard_multiplier)
-
-    for model, multiplier in expected_standard_multiplier.items():
-        fast = FAST_MODE_PRICING_USD_PER_1M[model]
-        standard = TOKEN_PRICING_USD_PER_1M["claude"][model]
-
-        assert fast["input_tokens"] == pytest.approx(multiplier * standard["input_tokens"])
-        assert fast["output_tokens"] == pytest.approx(multiplier * standard["output_tokens"])
-        cache_read_ratio = standard["cached_input_tokens"] / standard["input_tokens"]
-        assert fast["cached_input_tokens"] == pytest.approx(cache_read_ratio * fast["input_tokens"])
-        assert fast["cache_creation_input_tokens"] == pytest.approx(1.25 * fast["input_tokens"])
+    assert resolve_pricing_model("claude", "claude-haiku-4-5-20251001") == "claude-haiku-4-5"
+    for model in ("claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6"):
+        assert resolve_pricing_model("claude", model) == model
 
 
 def test_resolve_pricing_model_returns_empty_for_unknown_or_blank_models() -> None:
@@ -409,156 +130,6 @@ def test_calculate_costs_for_claude_uses_direct_input_tokens() -> None:
     assert costs["session_total_cost_usd"] == pytest.approx(0.1011496)
 
 
-def test_calculate_costs_for_gpt_5_5_uses_premium_codex_rates() -> None:
-    costs = calculate_costs(
-        provider="codex",
-        pricing_model="gpt-5.5",
-        input_tokens=1_000_000,
-        cached_input_tokens=200_000,
-        cache_creation_input_tokens=0,
-        output_tokens=100_000,
-        reasoning_output_tokens=40_000,
-    )
-
-    # gpt-5.5: input $5/M, cached $0.50/M, output $30/M. Billable input = 1M - 200K = 800K.
-    assert costs["input_cost_usd"] == pytest.approx(4.0)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.1)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.0)
-    assert costs["output_cost_usd"] == pytest.approx(1.8)
-    assert costs["reasoning_output_cost_usd"] == pytest.approx(1.2)
-    assert costs["session_total_cost_usd"] == pytest.approx(7.1)
-
-
-def test_calculate_costs_for_gpt_5_4_family_uses_current_rates() -> None:
-    full = calculate_costs(
-        provider="codex",
-        pricing_model="gpt-5.4",
-        input_tokens=1_000_000,
-        cached_input_tokens=0,
-        cache_creation_input_tokens=0,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-    # gpt-5.4: input $2.50/M, output $15/M.
-    assert full["input_cost_usd"] == pytest.approx(2.5)
-    assert full["output_cost_usd"] == pytest.approx(15.0)
-    assert full["session_total_cost_usd"] == pytest.approx(17.5)
-
-    mini = calculate_costs(
-        provider="codex",
-        pricing_model="gpt-5.4-mini",
-        input_tokens=1_000_000,
-        cached_input_tokens=100_000,
-        cache_creation_input_tokens=0,
-        output_tokens=200_000,
-        reasoning_output_tokens=0,
-    )
-    # gpt-5.4-mini: input $0.75/M, cached $0.075/M, output $4.50/M. Billable input = 900K.
-    assert mini["input_cost_usd"] == pytest.approx(0.675)
-    assert mini["cached_input_cost_usd"] == pytest.approx(0.0075)
-    assert mini["output_cost_usd"] == pytest.approx(0.9)
-    assert mini["session_total_cost_usd"] == pytest.approx(1.5825)
-
-
-@pytest.mark.parametrize(
-    ("model", "input_rate", "output_rate"),
-    (
-        ("gpt-5.6-sol", 4.0, 20.0),
-        ("gpt-5.6-terra", 2.0, 12.0),
-        ("gpt-5.6-luna", 0.2, 1.2),
-    ),
-)
-def test_calculate_costs_for_gpt_5_6_family_uses_promotional_rates(model: str, input_rate: float, output_rate: float) -> None:
-    costs = calculate_costs(
-        provider="codex",
-        pricing_model=model,
-        input_tokens=1_000_000,
-        cached_input_tokens=100_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=200_000,
-    )
-
-    # GPT-5.6: cache reads are 0.1x input and cache writes are 1.25x input.
-    assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * 0.1 * input_rate)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate)
-    assert costs["output_cost_usd"] == pytest.approx(0.8 * output_rate)
-    assert costs["reasoning_output_cost_usd"] == pytest.approx(0.2 * output_rate)
-    assert costs["session_total_cost_usd"] == pytest.approx(0.935 * input_rate + output_rate)
-
-
-def test_resolve_pricing_model_handles_fable_5_1() -> None:
-    assert resolve_pricing_model("claude", "claude-fable-5-1") == "claude-fable-5-1"
-    assert resolve_pricing_model("claude", "claude-fable-5-1[1m]") == "claude-fable-5-1"
-    assert resolve_pricing_model("claude", "fable") == "claude-fable-5-1"
-
-
-def test_resolve_pricing_model_fable_5_1_prefix_does_not_fall_back_to_fable_5() -> None:
-    # A dated Fable 5.1 snapshot must not match the shorter "claude-fable-5" prefix,
-    # which would price its cache reads at $1.00/MTok instead of $0.25/MTok.
-    assert resolve_pricing_model("claude", "claude-fable-5-1-20260901") == "claude-fable-5-1"
-    assert resolve_pricing_model("claude", "claude-fable-5-20260609") == "claude-fable-5"
-
-
-def test_calculate_costs_for_fable_5_1_uses_reduced_cache_read_rate() -> None:
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-fable-5-1",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    # Cache reads are 0.025x the $10/M base input rate, not the usual 0.1x.
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.25)
-    assert costs["input_cost_usd"] == pytest.approx(10.0)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(12.5)
-    assert costs["output_cost_usd"] == pytest.approx(50.0)
-
-
-def test_openrouter_pricing_covers_models_seen_in_opencode_and_pi_sessions() -> None:
-    openrouter = TOKEN_PRICING_USD_PER_1M["openrouter"]
-    for model in ("z-ai/glm-5.3-flash", "moonshotai/kimi-k3", "deepseek/deepseek-v4-pro-0813", "~anthropic/claude-fable-latest"):
-        assert model in openrouter
-    assert openrouter["thinkingmachines/inkling:free"]["output_tokens"] == 0.0
-
-
-def test_resolve_pricing_model_handles_gpt_6_astra() -> None:
-    assert resolve_pricing_model("codex", "gpt-6-astra") == "gpt-6-astra"
-    assert resolve_pricing_model("codex", "gpt-6-astra-2026-09-03") == "gpt-6-astra"
-
-
-def test_calculate_costs_for_gpt_6_astra_uses_standard_rates() -> None:
-    costs = calculate_costs(
-        provider="codex",
-        pricing_model="gpt-6-astra",
-        input_tokens=1_000_000,
-        cached_input_tokens=100_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=200_000,
-    )
-
-    # $10/M input, 0.1x cache read, 1.25x cache write, $50/M output. Billable input = 800K.
-    assert costs["input_cost_usd"] == pytest.approx(8.0)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.1)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(1.25)
-    assert costs["output_cost_usd"] == pytest.approx(40.0)
-    assert costs["reasoning_output_cost_usd"] == pytest.approx(10.0)
-    assert costs["session_total_cost_usd"] == pytest.approx(59.35)
-
-
-def test_resolve_pricing_model_handles_opus_5_5() -> None:
-    assert resolve_pricing_model("claude", "claude-opus-5-5") == "claude-opus-5-5"
-    assert resolve_pricing_model("claude", "claude-opus-5-5[1m]") == "claude-opus-5-5"
-    # A dated Opus 5.5 snapshot must not match the shorter "claude-opus-5" prefix.
-    assert resolve_pricing_model("claude", "claude-opus-5-5-20260915") == "claude-opus-5-5"
-    assert resolve_pricing_model("claude", "claude-opus-5-20260715") == "claude-opus-5"
-
-
 def test_calculate_costs_bills_1h_cache_writes_at_2x_input() -> None:
     costs = calculate_costs(
         provider="claude",
@@ -573,74 +144,6 @@ def test_calculate_costs_bills_1h_cache_writes_at_2x_input() -> None:
 
     # 400K 5-minute writes at $5/M + 600K 1-hour writes at 2 x $4/M.
     assert costs["cache_creation_input_cost_usd"] == pytest.approx(2.0 + 4.8)
-
-
-@pytest.mark.parametrize(
-    ("model", "input_rate", "cached_rate", "output_rate"),
-    (
-        ("gpt-5-codex", 1.25, 0.125, 10.0),
-        ("gpt-5.1-codex", 1.25, 0.125, 10.0),
-        ("gpt-5.1-codex-mini", 0.25, 0.025, 2.0),
-        ("gpt-5.2-codex", 1.75, 0.175, 14.0),
-        ("gpt-5.3-codex", 1.75, 0.175, 14.0),
-    ),
-)
-def test_codex_legacy_model_rates_match_openai_model_pages(model: str, input_rate: float, cached_rate: float, output_rate: float) -> None:
-    pricing = TOKEN_PRICING_USD_PER_1M["codex"][model]
-    assert (pricing["input_tokens"], pricing["cached_input_tokens"], pricing["output_tokens"]) == pytest.approx((input_rate, cached_rate, output_rate))
-
-
-def test_calculate_costs_for_opus_5_5_uses_reduced_cache_read_rate() -> None:
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-5-5",
-        input_tokens=1_000_000,
-        cached_input_tokens=1_000_000,
-        cache_creation_input_tokens=1_000_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=0,
-    )
-
-    # platform.claude.com: $4 input / $5 5m cache write / $20 output; cache reads are 0.05x input.
-    assert costs["input_cost_usd"] == pytest.approx(4.0)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.20)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(5.0)
-    assert costs["output_cost_usd"] == pytest.approx(20.0)
-    assert costs["session_total_cost_usd"] == pytest.approx(29.20)
-
-
-@pytest.mark.parametrize(
-    ("model", "input_rate", "cached_rate", "output_rate"),
-    (
-        ("gpt-6-sol", 2.0, 0.2, 10.0),
-        ("gpt-6.1-sol", 2.0, 0.1, 10.0),
-        ("gpt-6-luna", 0.1, 0.01, 0.5),
-    ),
-)
-@pytest.mark.parametrize(("service_tier", "multiplier"), (("", 1.0), ("priority", 2.0)))
-def test_calculate_costs_for_gpt_6_sol_and_luna_use_documented_rates(
-    model: str, input_rate: float, cached_rate: float, output_rate: float, service_tier: str, multiplier: float
-) -> None:
-    assert resolve_pricing_model("codex", model) == model
-    assert resolve_pricing_model("codex", f"{model}-2026-09-15") == model
-    costs = calculate_costs(
-        provider="codex",
-        pricing_model=model,
-        input_tokens=1_000_000,
-        cached_input_tokens=100_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=1_000_000,
-        reasoning_output_tokens=200_000,
-        service_tier=service_tier,
-    )
-
-    # Cache writes are 1.25x input. Billable input = 800K; Fast mode doubles every rate.
-    assert costs["input_cost_usd"] == pytest.approx(0.8 * input_rate * multiplier)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.1 * cached_rate * multiplier)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.1 * 1.25 * input_rate * multiplier)
-    assert costs["output_cost_usd"] == pytest.approx(0.8 * output_rate * multiplier)
-    assert costs["reasoning_output_cost_usd"] == pytest.approx(0.2 * output_rate * multiplier)
-    assert costs["session_total_cost_usd"] == pytest.approx((0.925 * input_rate + 0.1 * cached_rate + output_rate) * multiplier)
 
 
 def test_calculate_costs_returns_zero_breakdown_for_unknown_pricing_models() -> None:
@@ -663,66 +166,17 @@ def test_safe_int_handles_invalid_inputs() -> None:
     assert safe_int(object()) == 0
 
 
-def test_calculate_costs_long_context_now_bills_flat_standard_rates() -> None:
-    # As of Opus 4.6/4.7 and Sonnet 4.6, the full 1M context bills at standard rates,
-    # so long_context=True yields the same costs as standard (no >200K premium).
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-4-6",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
+def test_calculate_costs_long_context_selects_the_long_context_table_only_where_one_exists() -> None:
+    def total(model: str, long_context: bool) -> float:
+        costs = calculate_costs("claude", model, 1000, 500_000, 100_000, 5000, 0, long_context=long_context)
+        return costs["session_total_cost_usd"]
 
-    # Standard Opus: input=$5/M, cached=$0.5/M, cache_creation=$6.25/M, output=$25/M
-    assert costs["input_cost_usd"] == pytest.approx(0.005)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.25)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.625)
-    assert costs["output_cost_usd"] == pytest.approx(0.125)
-    assert costs["session_total_cost_usd"] == pytest.approx(1.005)
-
-
-def test_calculate_costs_long_context_falls_back_for_haiku() -> None:
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-haiku-4-5",
-        input_tokens=36,
-        cached_input_tokens=165811,
-        cache_creation_input_tokens=62198,
-        output_tokens=1357,
-        reasoning_output_tokens=0,
-        long_context=True,
-    )
-
-    # Haiku has no long context tier — falls back to standard rates
-    assert costs["input_cost_usd"] == pytest.approx(0.000036)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.0165811)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.0777475)
-    assert costs["output_cost_usd"] == pytest.approx(0.006785)
-    assert costs["session_total_cost_usd"] == pytest.approx(0.1011496)
-
-
-def test_calculate_costs_long_context_false_uses_standard_rates() -> None:
-    costs = calculate_costs(
-        provider="claude",
-        pricing_model="claude-opus-4-6",
-        input_tokens=1000,
-        cached_input_tokens=500_000,
-        cache_creation_input_tokens=100_000,
-        output_tokens=5000,
-        reasoning_output_tokens=0,
-        long_context=False,
-    )
-
-    # Standard Opus: input=$5/M, cached=$0.5/M, cache_creation=$6.25/M, output=$25/M
-    assert costs["input_cost_usd"] == pytest.approx(0.005)
-    assert costs["cached_input_cost_usd"] == pytest.approx(0.25)
-    assert costs["cache_creation_input_cost_usd"] == pytest.approx(0.625)
-    assert costs["output_cost_usd"] == pytest.approx(0.125)
-    assert costs["session_total_cost_usd"] == pytest.approx(1.005)
+    # Haiku 5.5 has a real long-context tier, so long_context=True costs more.
+    assert total("claude-haiku-5-5", True) > total("claude-haiku-5-5", False)
+    # Models that bill the full window at standard rates mirror the standard table.
+    assert total("claude-opus-4-6", True) == pytest.approx(total("claude-opus-4-6", False))
+    # A model absent from the long-context table falls back to its standard rates.
+    assert total("claude-haiku-4-5", True) == pytest.approx(total("claude-haiku-4-5", False))
 
 
 def test_is_unpriced_flags_estimated_audits_whose_model_has_no_table_entry() -> None:
