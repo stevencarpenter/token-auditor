@@ -215,6 +215,17 @@ def test_calculate_costs_priority_tier_uses_per_model_fast_multiplier() -> None:
     assert unlisted["session_total_cost_usd"] == pytest.approx(1.45)
 
 
+def test_calculate_costs_ultrafast_tier_bills_6x_only_on_listed_models() -> None:
+    sol = calculate_costs("codex", "gpt-6.1-sol", 2_000_000, 1_000_000, 0, 1_000_000, 0, service_tier="ultrafast")
+    unlisted = calculate_costs("codex", "gpt-6.1-terra", 1_000_000, 0, 0, 1_000_000, 0, service_tier="ultrafast")
+
+    # gpt-6.1-sol Ultrafast is $12 in / $0.60 cached / $60 out; unlisted models bill at standard.
+    assert sol["input_cost_usd"] == pytest.approx(12.0)
+    assert sol["cached_input_cost_usd"] == pytest.approx(0.60)
+    assert sol["output_cost_usd"] == pytest.approx(60.0)
+    assert unlisted["session_total_cost_usd"] == pytest.approx(6.0)
+
+
 def test_parse_codex_events_counts_usage_across_a_cumulative_total_restart() -> None:
     usage = parse_codex_events(
         (

@@ -347,6 +347,14 @@ CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
     "gpt-5.4-mini": 2.0,
 }
 
+# Codex logs Ultrafast mode as service_tier "ultrafast" (openai/codex
+# codex-rs/core/src/session/model_catalog_settings.rs). OpenAI prices it at 6x every standard
+# rate, and its pricing page lists Ultrafast rows only for these models (fetched 2026-11-11).
+CODEX_ULTRAFAST_MODE_MULTIPLIER: dict[str, float] = {
+    "gpt-6-astra": 6.0,
+    "gpt-6.1-sol": 6.0,
+}
+
 MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
     "codex": {
         # Retired 2026-07-23. OpenAI listed gpt-5.1-codex-max at gpt-5.1-codex's rates.

@@ -5,6 +5,7 @@ import re
 from token_auditor.core.constants import (
     CACHE_WRITE_1HR_MULTIPLIER,
     CODEX_FAST_MODE_MULTIPLIER,
+    CODEX_ULTRAFAST_MODE_MULTIPLIER,
     DATA_RESIDENCY_MULTIPLIER,
     FAST_MODE_PRICING_USD_PER_1M,
     LONG_CONTEXT_PRICING_USD_PER_1M,
@@ -80,8 +81,9 @@ def calculate_costs(
         return zero_costs()
     else:
         pricing = provider_pricing[pricing_model]
-    if provider == "codex" and service_tier == "priority" and pricing_model in CODEX_FAST_MODE_MULTIPLIER:
-        pricing = {key: rate * CODEX_FAST_MODE_MULTIPLIER[pricing_model] for key, rate in pricing.items()}
+    tier_multipliers = {"priority": CODEX_FAST_MODE_MULTIPLIER, "ultrafast": CODEX_ULTRAFAST_MODE_MULTIPLIER}.get(service_tier, {})
+    if provider == "codex" and pricing_model in tier_multipliers:
+        pricing = {key: rate * tier_multipliers[pricing_model] for key, rate in pricing.items()}
     if provider == "claude" and inference_geo == "us":
         pricing = {key: rate * DATA_RESIDENCY_MULTIPLIER for key, rate in pricing.items()}
 
