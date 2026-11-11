@@ -39,14 +39,14 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("codex", "gpt-5.6-terra-2026-06-26") == "gpt-5.6-terra"
     assert resolve_pricing_model("codex", "gpt-5.6-luna-2026-06-26") == "gpt-5.6-luna"
     # Bare Claude aliases (logged for some sessions) map to the current fleet.
-    assert resolve_pricing_model("claude", "fable") == "claude-fable-5-1"
+    assert resolve_pricing_model("claude", "fable") == "claude-fable-5-2"
     assert resolve_pricing_model("claude", "opus") == "claude-opus-5-5"
     assert resolve_pricing_model("claude", "opus[1m]") == "claude-opus-5-5"
     assert resolve_pricing_model("claude", "sonnet") == "claude-sonnet-5-5"
     assert resolve_pricing_model("claude", "haiku") == "claude-haiku-5-5"
 
 
-@pytest.mark.parametrize("model", ("gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna"))
+@pytest.mark.parametrize("model", ("gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"))
 def test_resolve_pricing_model_handles_gpt_6_family(model: str) -> None:
     assert resolve_pricing_model("codex", model) == model
     assert resolve_pricing_model("codex", f"{model}-2026-09-15") == model
@@ -61,6 +61,7 @@ def test_resolve_pricing_model_handles_gpt_6_family(model: str) -> None:
         "claude-opus-5-5",
         "claude-opus-5",
         "claude-opus-4-8",
+        "claude-fable-5-2",
         "claude-fable-5-1",
         "claude-fable-5",
     ),
@@ -80,7 +81,15 @@ def test_resolve_pricing_model_prefix_order_keeps_longer_ids_from_falling_back()
     assert resolve_pricing_model("claude", "claude-opus-5-20260715") == "claude-opus-5"
     assert resolve_pricing_model("claude", "claude-sonnet-5-5-20260928") == "claude-sonnet-5-5"
     assert resolve_pricing_model("claude", "claude-sonnet-5-20260701") == "claude-sonnet-5"
+    assert resolve_pricing_model("claude", "claude-fable-5-2-20261101") == "claude-fable-5-2"
     assert resolve_pricing_model("claude", "claude-fable-5-1-20260901") == "claude-fable-5-1"
+    # Mythos models bill at the matching Fable model's rates.
+    assert resolve_pricing_model("claude", "claude-mythos-5-2") == "claude-fable-5-2"
+    assert resolve_pricing_model("claude", "claude-mythos-5-2[1m]") == "claude-fable-5-2"
+    assert resolve_pricing_model("claude", "claude-mythos-5-2-20261101") == "claude-fable-5-2"
+    assert resolve_pricing_model("claude", "claude-mythos-5-20260609") == "claude-fable-5"
+    assert resolve_pricing_model("claude", "claude-mythos-5-1[1m]") == "claude-fable-5-1"
+    assert resolve_pricing_model("claude", "claude-mythos-5") == "claude-fable-5"
     assert resolve_pricing_model("claude", "claude-fable-5-20260609") == "claude-fable-5"
     assert resolve_pricing_model("claude", "claude-haiku-4-5-20251001") == "claude-haiku-4-5"
     for model in ("claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6"):
@@ -190,3 +199,22 @@ def test_is_unpriced_ignores_priced_provider_billed_and_modelless_audits() -> No
     assert is_unpriced({"model": "anything", "pricing_model": "", "cost_source": "provider_billed"}) is False
     # No model means nothing to look up, so there is nothing to warn about.
     assert is_unpriced({"model": "", "pricing_model": "", "cost_source": "estimated"}) is False
+
+
+def test_calculate_costs_prices_fable_5_2_fast_mode_at_2x_with_0_025x_cache_reads() -> None:
+    costs = calculate_costs(
+        provider="claude",
+        pricing_model="claude-fable-5-2",
+        input_tokens=1_000_000,
+        cached_input_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        reasoning_output_tokens=0,
+        cache_creation_1h_input_tokens=1_000_000,
+        speed="fast",
+    )
+
+    assert costs["input_cost_usd"] == pytest.approx(16.0)
+    assert costs["cached_input_cost_usd"] == pytest.approx(0.40)
+    assert costs["cache_creation_input_cost_usd"] == pytest.approx(32.0)
+    assert costs["output_cost_usd"] == pytest.approx(80.0)

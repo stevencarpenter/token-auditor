@@ -88,7 +88,7 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
         },
         # GPT-5.6 family rates (per developers.openai.com). Cache reads are discounted by
         # 90% and cache writes are billed at 1.25x input. Sol's rate is promotional, held
-        # at least through 2026-11-21.
+        # until 2026-11-30 (developers.openai.com/api/docs/pricing, fetched 2026-11-11).
         "gpt-5.6-sol": {
             "input_tokens": 4.000,
             "cached_input_tokens": 0.400,
@@ -134,6 +134,13 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 10.000,
             "cache_creation_input_tokens": 2.500,
         },
+        # https://developers.openai.com/api/docs/models/gpt-6.1-terra (verified 2026-11-11).
+        "gpt-6.1-terra": {
+            "input_tokens": 1.000,
+            "cached_input_tokens": 0.050,
+            "output_tokens": 5.000,
+            "cache_creation_input_tokens": 1.250,
+        },
         "gpt-6-luna": {
             "input_tokens": 0.100,
             "cached_input_tokens": 0.010,
@@ -142,8 +149,16 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
         },
     },
     "claude": {
+        # Fable 5.2 undercuts Fable 5.1 and keeps its 0.025x cache-read multiplier ($0.20/MTok)
+        # (platform.claude.com, fetched 2026-11-11).
+        "claude-fable-5-2": {
+            "input_tokens": 8.00,
+            "cached_input_tokens": 0.20,
+            "cache_creation_input_tokens": 10.00,
+            "output_tokens": 40.00,
+        },
         # Fable 5.1 shares Fable 5's base rates but prices cache reads at 0.025x input
-        # ($0.25/MTok) rather than the 0.1x every other Claude model uses.
+        # ($0.25/MTok) rather than the 0.1x most other Claude models use.
         "claude-fable-5-1": {
             "input_tokens": 10.00,
             "cached_input_tokens": 0.25,
@@ -321,6 +336,7 @@ CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
     "gpt-6-astra": 2.0,
     "gpt-6-sol": 2.0,
     "gpt-6.1-sol": 2.0,
+    "gpt-6.1-terra": 2.0,
     "gpt-6-luna": 2.0,
     "gpt-5.6-sol": 2.0,
     "gpt-5.6-terra": 2.0,
@@ -331,12 +347,23 @@ CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
     "gpt-5.4-mini": 2.0,
 }
 
+# Codex logs Ultrafast mode as service_tier "ultrafast" (openai/codex
+# codex-rs/core/src/session/model_catalog_settings.rs). OpenAI prices it at 6x every standard
+# rate, and its pricing page lists Ultrafast rows only for these models (fetched 2026-11-11).
+CODEX_ULTRAFAST_MODE_MULTIPLIER: dict[str, float] = {
+    "gpt-6-astra": 6.0,
+    "gpt-6.1-sol": 6.0,
+}
+
 MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
     "codex": {
         # Retired 2026-07-23. OpenAI listed gpt-5.1-codex-max at gpt-5.1-codex's rates.
         "gpt-5.1-codex-max": "gpt-5.1-codex",
     },
     "claude": {
+        "claude-fable-5-2[1m]": "claude-fable-5-2",
+        "claude-mythos-5-2": "claude-fable-5-2",
+        "claude-mythos-5-2[1m]": "claude-fable-5-2",
         "claude-fable-5-1[1m]": "claude-fable-5-1",
         "claude-fable-5[1m]": "claude-fable-5",
         "claude-opus-5-5[1m]": "claude-opus-5-5",
@@ -353,8 +380,9 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
         "claude-sonnet-4-5": "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001": "claude-haiku-4-5",
         # Bare aliases are logged for some sessions (e.g. subagents); map each tier to
-        # its current fleet member.
-        "fable": "claude-fable-5-1",
+        # its current fleet member. `fable` resolves to Fable 5.2 from Claude Code v2.1.321
+        # (code.claude.com/docs/en/model-config), so older `fable` sessions price at 5.2 rates.
+        "fable": "claude-fable-5-2",
         "opus": "claude-opus-5-5",
         "opus[1m]": "claude-opus-5-5",
         "sonnet": "claude-sonnet-5-5",
@@ -369,10 +397,17 @@ MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
 MODEL_PRICING_PREFIX_ALIASES: dict[str, tuple[tuple[str, str], ...]] = {
     "codex": (),
     "claude": (
-        # Ordering matters: "claude-fable-5-1" must be tried before "claude-fable-5",
-        # or a dated Fable 5.1 snapshot resolves to Fable 5 and misprices cache reads 4x.
+        # Ordering matters: "claude-fable-5-2" and "claude-fable-5-1" must be tried before
+        # "claude-fable-5", or a dated snapshot resolves to Fable 5 and misprices cache reads 4x.
+        # Mythos models (limited availability) bill at the matching Fable model's rates.
+        # The 5-2 prefixes end in "-" because a dated 5.0 snapshot ("claude-fable-5-2026...")
+        # also starts with "claude-fable-5-2"; bare and [1m] 5.2 ids resolve via exact aliases.
+        ("claude-fable-5-2-", "claude-fable-5-2"),
         ("claude-fable-5-1", "claude-fable-5-1"),
         ("claude-fable-5", "claude-fable-5"),
+        ("claude-mythos-5-2-", "claude-fable-5-2"),
+        ("claude-mythos-5-1", "claude-fable-5-1"),
+        ("claude-mythos-5", "claude-fable-5"),
         # Same trap: "claude-opus-5-5" must precede "claude-opus-5" (Opus 5 costs 1.25x).
         ("claude-opus-5-5", "claude-opus-5-5"),
         ("claude-opus-5", "claude-opus-5"),
@@ -403,6 +438,7 @@ LONG_CONTEXT_INPUT_THRESHOLD_BY_MODEL: dict[str, int] = {"claude-haiku-5-5": 100
 # so the long-context code path stays exercised and a future model that reintroduces a
 # premium only needs its rates changed here.
 LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
+    "claude-fable-5-2": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5-2"],
     "claude-fable-5-1": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5-1"],
     "claude-fable-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-fable-5"],
     "claude-opus-5-5": TOKEN_PRICING_USD_PER_1M["claude"]["claude-opus-5-5"],
@@ -423,12 +459,18 @@ LONG_CONTEXT_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
 
 # Applied when a message's usage.speed is "fast"; model IDs do not distinguish fast mode. Fast mode includes 1M context at no additional charge. The
 # multiplier is NOT uniform: Opus 4.6/4.7 fast mode was 6x standard ($30 in / $150 out), while
-# Opus 4.8, Opus 5, and Opus 5.5 fast mode is 2x standard ($10/$50, $10/$50, $8/$40). Cache read
-# and 5-min cache write keep each model's standard multipliers off its fast input rate (0.05x
-# cache read on Opus 5.5, 0.1x elsewhere; 1.25x cache write). Fast mode is Claude-API-only.
-# Opus 4.7 fast mode has been withdrawn and Opus 4.6 fast requests now run and bill at standard
-# rates; their rates are kept here for auditing historical sessions.
+# Fable 5.2, Opus 4.8, Opus 5, and Opus 5.5 fast mode is 2x standard ($16/$80, $10/$50, $10/$50,
+# $8/$40). Cache read and 5-min cache write keep each model's standard multipliers off its fast
+# input rate (0.025x cache read on Fable 5.2, 0.05x on Opus 5.5, 0.1x elsewhere; 1.25x cache
+# write). Opus 4.7 fast mode has been withdrawn and Opus 4.6 fast requests now run and bill at
+# standard rates; their rates are kept here for auditing historical sessions.
 FAST_MODE_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
+    "claude-fable-5-2": {
+        "input_tokens": 16.00,
+        "cached_input_tokens": 0.40,
+        "cache_creation_input_tokens": 20.00,
+        "output_tokens": 80.00,
+    },
     "claude-opus-5-5": {
         "input_tokens": 8.00,
         "cached_input_tokens": 0.40,
