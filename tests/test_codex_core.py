@@ -226,6 +226,24 @@ def test_calculate_costs_ultrafast_tier_bills_6x_only_on_listed_models() -> None
     assert unlisted["session_total_cost_usd"] == pytest.approx(6.0)
 
 
+@pytest.mark.parametrize(("model", "input_rate"), (("gpt-6.2-astra", 8.0), ("gpt-6.2-sol", 2.0)))
+def test_parse_codex_events_prices_gpt_6_2_ultrafast_at_each_events_timestamp(model: str, input_rate: float) -> None:
+    usage = parse_codex_events(
+        (
+            {"type": "turn_context", "payload": {"model": model}},
+            _thread_settings("ultrafast"),
+            {**_token_count(1_000_000, 0), "timestamp": "2027-03-01T07:59:59.999Z"},
+            {**_token_count(3_000_000, 0), "timestamp": "2027-03-01T00:00:00-08:00"},
+            _token_count(4_000_000, 0),
+        ),
+        Path("/tmp/codex-ultrafast-promotion.jsonl"),
+    )
+
+    assert usage is not None
+    assert usage["pricing_model"] == model
+    assert usage["input_cost_usd"] == pytest.approx(input_rate * (3 + 2 * 6 + 3))
+
+
 def test_parse_codex_events_counts_usage_across_a_cumulative_total_restart() -> None:
     usage = parse_codex_events(
         (

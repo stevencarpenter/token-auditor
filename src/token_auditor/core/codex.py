@@ -79,7 +79,7 @@ def extract_codex_event_delta(event: JsonEvent) -> CodexDelta:
     )
 
 
-def _usage_costs(model: str, usage: TokenUsage, service_tier: str) -> CostBreakdown:
+def _usage_costs(model: str, usage: TokenUsage, service_tier: str, timestamp: str | None) -> CostBreakdown:
     """Price one usage block at a model and service tier."""
     return calculate_costs(
         provider="codex",
@@ -90,6 +90,7 @@ def _usage_costs(model: str, usage: TokenUsage, service_tier: str) -> CostBreakd
         output_tokens=usage.output_tokens,
         reasoning_output_tokens=usage.reasoning_output_tokens,
         service_tier=service_tier,
+        timestamp=timestamp or "",
     )
 
 
@@ -133,7 +134,8 @@ def _add_turn(state: CodexState, model: str, delta: CodexDelta, total: TokenUsag
     summed_usage = _add_usage(state.summed_usage or TokenUsage(), increment)
     if not model:
         return replace(state, summed_usage=summed_usage, unpriced_usage=_add_usage(state.unpriced_usage or TokenUsage(), increment))
-    return replace(state, summed_usage=summed_usage, costs=_add_costs(state.costs, _usage_costs(model, increment, state.service_tier)))
+    costs = _usage_costs(model, increment, state.service_tier, delta.timestamp)
+    return replace(state, summed_usage=summed_usage, costs=_add_costs(state.costs, costs))
 
 
 def reduce_codex_state(state: CodexState, delta: CodexDelta) -> CodexState:
@@ -166,9 +168,9 @@ def finalize_codex_state(state: CodexState, session_file: Path) -> AuditRecord |
     usage = _with_total_tokens(state.summed_usage or state.usage)
     pricing_model = resolve_pricing_model("codex", state.model)
     if state.costs is None and state.unpriced_usage is None:
-        costs = _usage_costs(state.model, usage, state.service_tier)
+        costs = _usage_costs(state.model, usage, state.service_tier, state.timestamp)
     else:
-        costs = _add_costs(state.costs, _usage_costs(state.model, state.unpriced_usage or TokenUsage(), state.service_tier))
+        costs = _add_costs(state.costs, _usage_costs(state.model, state.unpriced_usage or TokenUsage(), state.service_tier, state.timestamp))
 
     return {
         "provider": "codex",

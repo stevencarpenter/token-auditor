@@ -1,11 +1,13 @@
 """Pure pricing model resolution and cost arithmetic for token_auditor."""
 
 import re
+from datetime import UTC, datetime
 
 from token_auditor.core.constants import (
     CACHE_WRITE_1HR_MULTIPLIER,
     CODEX_FAST_MODE_MULTIPLIER,
     CODEX_ULTRAFAST_MODE_MULTIPLIER,
+    CODEX_ULTRAFAST_PROMO_END,
     DATA_RESIDENCY_MULTIPLIER,
     FAST_MODE_PRICING_USD_PER_1M,
     LONG_CONTEXT_PRICING_USD_PER_1M,
@@ -69,6 +71,7 @@ def calculate_costs(
     service_tier: str = "",
     speed: str = "",
     inference_geo: str = "",
+    timestamp: str = "",
 ) -> CostBreakdown:
     """Compute session cost components using provider-specific billing rules."""
     provider_pricing = TOKEN_PRICING_USD_PER_1M.get(provider, {})
@@ -83,7 +86,16 @@ def calculate_costs(
         pricing = provider_pricing[pricing_model]
     tier_multipliers = {"priority": CODEX_FAST_MODE_MULTIPLIER, "ultrafast": CODEX_ULTRAFAST_MODE_MULTIPLIER}.get(service_tier, {})
     if provider == "codex" and pricing_model in tier_multipliers:
-        pricing = {key: rate * tier_multipliers[pricing_model] for key, rate in pricing.items()}
+        multiplier = tier_multipliers[pricing_model]
+        if service_tier == "ultrafast" and pricing_model in ("gpt-6.2-astra", "gpt-6.2-sol"):
+            try:
+                usage_time = datetime.fromisoformat(timestamp)
+            except ValueError:
+                # shortcut: use the launch rate when the log lacks a usable date, until it can supply one.
+                usage_time = datetime.min
+            if usage_time.replace(tzinfo=usage_time.tzinfo or UTC) < CODEX_ULTRAFAST_PROMO_END:
+                multiplier = 3.0
+        pricing = {key: rate * multiplier for key, rate in pricing.items()}
     if provider == "claude" and inference_geo == "us":
         pricing = {key: rate * DATA_RESIDENCY_MULTIPLIER for key, rate in pricing.items()}
 
