@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import cast
 
 from token_auditor.core.pricing import calculate_costs, resolve_pricing_model, zero_costs
-from token_auditor.core.types import AuditRecord, CodexDelta, CodexState, CostBreakdown, JsonEvent, TokenUsage
+from token_auditor.core.types import AuditRecord, CodexDeferredUsage, CodexDelta, CodexState, CostBreakdown, JsonEvent, TokenUsage
 from token_auditor.core.utils import safe_int
 
 
@@ -133,7 +133,8 @@ def _add_turn(state: CodexState, model: str, delta: CodexDelta, total: TokenUsag
     increment = _turn_increment(state.usage, total, delta.last_usage)
     summed_usage = _add_usage(state.summed_usage or TokenUsage(), increment)
     if not model:
-        return replace(state, summed_usage=summed_usage, unpriced_usage=_add_usage(state.unpriced_usage or TokenUsage(), increment))
+        deferred_usage = CodexDeferredUsage(increment, delta.timestamp, state.deferred_usage)
+        return replace(state, summed_usage=summed_usage, deferred_usage=deferred_usage)
     costs = _usage_costs(model, increment, state.service_tier, delta.timestamp)
     return replace(state, summed_usage=summed_usage, costs=_add_costs(state.costs, costs))
 
@@ -167,10 +168,13 @@ def finalize_codex_state(state: CodexState, session_file: Path) -> AuditRecord |
 
     usage = _with_total_tokens(state.summed_usage or state.usage)
     pricing_model = resolve_pricing_model("codex", state.model)
-    if state.costs is None and state.unpriced_usage is None:
+    costs = state.costs or zero_costs()
+    deferred_usage = state.deferred_usage
+    if state.costs is None and deferred_usage is None:
         costs = _usage_costs(state.model, usage, state.service_tier, state.timestamp)
-    else:
-        costs = _add_costs(state.costs, _usage_costs(state.model, state.unpriced_usage or TokenUsage(), state.service_tier, state.timestamp))
+    while deferred_usage is not None:
+        costs = _add_costs(costs, _usage_costs(state.model, deferred_usage.usage, state.service_tier, deferred_usage.timestamp))
+        deferred_usage = deferred_usage.previous
 
     return {
         "provider": "codex",

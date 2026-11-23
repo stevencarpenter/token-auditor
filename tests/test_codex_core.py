@@ -244,6 +244,24 @@ def test_parse_codex_events_prices_gpt_6_2_ultrafast_at_each_events_timestamp(mo
     assert usage["input_cost_usd"] == pytest.approx(input_rate * (3 + 2 * 6 + 3))
 
 
+def test_parse_codex_events_preserves_timestamps_before_model_is_known() -> None:
+    usage = parse_codex_events(
+        (
+            _thread_settings("ultrafast"),
+            {**_token_count(1_000_000, 0), "timestamp": "2027-03-01T07:59:59Z"},
+            _token_count(2_000_000, 0),
+            {**_token_count(3_000_000, 0), "timestamp": "2027-03-01T08:00:01Z"},
+            {"type": "turn_context", "payload": {"model": "gpt-6.2-astra"}},
+            {**_token_count(4_000_000, 0), "timestamp": "2027-03-01T08:00:02Z"},
+        ),
+        Path("/tmp/codex-deferred-ultrafast.jsonl"),
+    )
+
+    assert usage is not None
+    assert usage["input_tokens"] == 4_000_000
+    assert usage["input_cost_usd"] == pytest.approx(24.0 + 24.0 + 48.0 + 48.0)
+
+
 def test_parse_codex_events_counts_usage_across_a_cumulative_total_restart() -> None:
     usage = parse_codex_events(
         (

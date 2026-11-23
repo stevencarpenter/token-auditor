@@ -40,6 +40,15 @@ class CodexDelta:
 
 
 @dataclass(frozen=True)
+class CodexDeferredUsage:
+    """A usage increment that needs the final model before pricing."""
+
+    usage: TokenUsage
+    timestamp: str | None
+    previous: CodexDeferredUsage | None
+
+
+@dataclass(frozen=True)
 class CodexState:
     """Reducer state for Codex event folds."""
 
@@ -53,8 +62,8 @@ class CodexState:
     # active for it. usage above is the latest cumulative total, which can reset mid-session.
     summed_usage: TokenUsage | None = None
     costs: CostBreakdown | None = None
-    # Usage logged before any turn_context names a model; priced at the final model.
-    unpriced_usage: TokenUsage | None = None
+    # Deferred increments, latest first, priced with the final model and service tier.
+    deferred_usage: CodexDeferredUsage | None = None
 
 
 @dataclass(frozen=True)
