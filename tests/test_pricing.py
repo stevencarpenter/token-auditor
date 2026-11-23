@@ -46,7 +46,7 @@ def test_resolve_pricing_model_handles_current_fleet_models() -> None:
     assert resolve_pricing_model("claude", "haiku") == "claude-haiku-5-5"
 
 
-@pytest.mark.parametrize("model", ("gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"))
+@pytest.mark.parametrize("model", ("gpt-6.2-astra", "gpt-6.2-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"))
 def test_resolve_pricing_model_handles_gpt_6_family(model: str) -> None:
     assert resolve_pricing_model("codex", model) == model
     assert resolve_pricing_model("codex", f"{model}-2026-09-15") == model

@@ -1,5 +1,7 @@
 """Constants shared by pure token_auditor core modules."""
 
+from datetime import UTC, datetime
+
 PROJECT_NAME = "token-auditor"
 CODEX_SESSION_GLOB = "sessions/*/*/*/rollout-*.jsonl"
 CLAUDE_SESSION_GLOB = "projects/*/*.jsonl"
@@ -107,20 +109,26 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 1.200,
             "cache_creation_input_tokens": 0.250,
         },
-        # GPT-6 Astra (GA 2026-09-03) ships as a single model with no mini/nano/pro tier
-        # (developers.openai.com/api/docs/models/gpt-6-astra lists gpt-6-astra as the only
-        # snapshot). Standard-tier rates only: batch/flex (0.5x), fast (2x), the >272K
-        # long-context tier, and the data-residency surcharge are not modeled, for the same
-        # reason as gpt-5.5 — codex logs cumulative session usage and no service tier.
+        # GPT-6 family base rates from developers.openai.com/api/docs/pricing (2026-11-22).
+        # The catalog uses short-context rates and the default 30-minute cache-write rate.
+        "gpt-6.2-astra": {
+            "input_tokens": 8.000,
+            "cached_input_tokens": 0.400,
+            "output_tokens": 40.000,
+            "cache_creation_input_tokens": 10.000,
+        },
+        "gpt-6.2-sol": {
+            "input_tokens": 2.000,
+            "cached_input_tokens": 0.100,
+            "output_tokens": 10.000,
+            "cache_creation_input_tokens": 2.500,
+        },
         "gpt-6-astra": {
             "input_tokens": 10.000,
             "cached_input_tokens": 1.000,
             "output_tokens": 50.000,
             "cache_creation_input_tokens": 12.500,
         },
-        # GPT-6 Sol and Luna (developers.openai.com, fetched 2026-09-22) are single
-        # snapshots like Astra, with the same unmodeled tiers. Their >272K long-context
-        # tier is 2x input/cache and 1.5x output.
         "gpt-6-sol": {
             "input_tokens": 2.000,
             "cached_input_tokens": 0.200,
@@ -241,17 +249,15 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
         },
     },
     "opencode": {},
-    # OpenRouter rates (openrouter.ai/api/v1/models, fetched 2026-09-12) for the models
-    # actually used through OpenRouter in OpenCode and pi sessions. Fractional rates are
-    # OpenRouter's own, not the upstream provider's list price. OpenRouter reports no
-    # one-time cache-write charge for these models, so cache writes are 0.0; Gemini bills
-    # cache storage per token per hour, which this per-token schema cannot express.
+    # OpenRouter rates (openrouter.ai/api/v1/models, fetched 2026-11-22) for selected models
+    # and aliases. Gemini bills cache storage per token per hour, which this per-token
+    # schema cannot express. The Gemini entries use zero for one-time cache writes.
     #
     # REFERENCE ONLY — deliberately not wired into cost computation, and it should stay
     # that way. OpenRouter routes each request to whichever upstream endpoint is
     # available, and those endpoints charge different rates, so no single per-model rate
-    # reproduces a bill. Computing these rates over every costed OpenRouter row in a real
-    # OpenCode database gives computed/actual ratios of 1.00 for minimax-m3 (152 rows),
+    # reproduces a bill. Applying the September 12, 2026 rates to a real OpenCode database
+    # gave estimated-to-billed ratios of 1.00 for minimax-m3 (152 rows),
     # exactly 2.00 for glm-5.3-flash (7,472 rows), 0.77-0.87 for kimi-k3 (704 rows),
     # 0.43-0.57 for glm-5.2 (48 rows), and 1.88-16.84 for deepseek-v4-pro (304 rows).
     # The spread within a single model is the point: it cannot be corrected by fixing a
@@ -263,21 +269,21 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
     # of output, so OpenCode's counts cannot be passed to it unchanged.
     "openrouter": {
         "z-ai/glm-5.3-flash": {
-            "input_tokens": 0.150,
+            "input_tokens": 0.0399,
             "cached_input_tokens": 0.030,
-            "output_tokens": 0.500,
+            "output_tokens": 0.0784,
             "cache_creation_input_tokens": 0.0,
         },
         "z-ai/glm-5.2": {
-            "input_tokens": 0.600,
-            "cached_input_tokens": 0.150,
-            "output_tokens": 2.000,
+            "input_tokens": 0.620,
+            "cached_input_tokens": 0.140,
+            "output_tokens": 2.420,
             "cache_creation_input_tokens": 0.0,
         },
         "moonshotai/kimi-k3": {
-            "input_tokens": 2.302729,
-            "cached_input_tokens": 0.263169,
-            "output_tokens": 11.550195,
+            "input_tokens": 0.192,
+            "cached_input_tokens": 0.182,
+            "output_tokens": 16.000,
             "cache_creation_input_tokens": 0.0,
         },
         "minimax/minimax-m3": {
@@ -289,15 +295,15 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
         # deepseek-v4-pro is a floating pointer to the latest dated build, which is
         # priced differently from the 0813 snapshot; both are logged, so both are listed.
         "deepseek/deepseek-v4-pro": {
-            "input_tokens": 0.819366,
-            "cached_input_tokens": 0.068281,
-            "output_tokens": 1.638732,
+            "input_tokens": 0.900,
+            "cached_input_tokens": 0.200,
+            "output_tokens": 1.500,
             "cache_creation_input_tokens": 0.0,
         },
         "deepseek/deepseek-v4-pro-0813": {
-            "input_tokens": 0.578160,
-            "cached_input_tokens": 0.018396,
-            "output_tokens": 1.734480,
+            "input_tokens": 1.320,
+            "cached_input_tokens": 0.044,
+            "output_tokens": 3.960,
             "cache_creation_input_tokens": 0.0,
         },
         "google/gemini-3.6-flash": {
@@ -306,20 +312,45 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
             "output_tokens": 3.750,
             "cache_creation_input_tokens": 0.0,
         },
+        "google/gemini-4-hydrogen": {
+            "input_tokens": 1.500,
+            "cached_input_tokens": 0.075,
+            "output_tokens": 7.500,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "google/gemini-4-neon": {
+            "input_tokens": 3.000,
+            "cached_input_tokens": 0.150,
+            "output_tokens": 15.000,
+            "cache_creation_input_tokens": 0.0,
+        },
+        "anthropic/claude-fable-5.2": {
+            "input_tokens": 8.000,
+            "cached_input_tokens": 0.200,
+            "output_tokens": 40.000,
+            "cache_creation_input_tokens": 10.000,
+        },
         # "~"-prefixed ids are OpenRouter floating aliases that track whatever the
         # upstream vendor currently ships, so these rates move without the id changing.
         "~moonshotai/kimi-latest": {
-            "input_tokens": 2.302729,
-            "cached_input_tokens": 0.263169,
-            "output_tokens": 11.550195,
+            "input_tokens": 0.1824,
+            "cached_input_tokens": 0.180,
+            "output_tokens": 11.0055,
             "cache_creation_input_tokens": 0.0,
         },
         "~anthropic/claude-fable-latest": {
-            "input_tokens": 10.000,
-            "cached_input_tokens": 0.250,
-            "output_tokens": 50.000,
-            "cache_creation_input_tokens": 12.500,
+            "input_tokens": 8.000,
+            "cached_input_tokens": 0.200,
+            "output_tokens": 40.000,
+            "cache_creation_input_tokens": 10.000,
         },
+        "thinkingmachines/inkling-2-mini": {
+            "input_tokens": 0.075,
+            "cached_input_tokens": 0.015,
+            "output_tokens": 0.300,
+            "cache_creation_input_tokens": 0.0,
+        },
+        # Historical free route. The current catalog no longer lists it.
         "thinkingmachines/inkling:free": {
             "input_tokens": 0.0,
             "cached_input_tokens": 0.0,
@@ -333,6 +364,8 @@ TOKEN_PRICING_USD_PER_1M: dict[str, dict[str, dict[str, float]]] = {
 # standard rate, per developers.openai.com/api/docs/pricing. Codex records the tier in
 # thread_settings_applied events. Models without a Fast-mode row are billed at standard rates.
 CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
+    "gpt-6.2-astra": 2.0,
+    "gpt-6.2-sol": 2.0,
     "gpt-6-astra": 2.0,
     "gpt-6-sol": 2.0,
     "gpt-6.1-sol": 2.0,
@@ -347,13 +380,15 @@ CODEX_FAST_MODE_MULTIPLIER: dict[str, float] = {
     "gpt-5.4-mini": 2.0,
 }
 
-# Codex logs Ultrafast mode as service_tier "ultrafast" (openai/codex
-# codex-rs/core/src/session/model_catalog_settings.rs). OpenAI prices it at 6x every standard
-# rate, and its pricing page lists Ultrafast rows only for these models (fetched 2026-11-11).
+# List multipliers for the "ultrafast" service tier (developers.openai.com/api/docs/pricing).
 CODEX_ULTRAFAST_MODE_MULTIPLIER: dict[str, float] = {
+    "gpt-6.2-astra": 6.0,
+    "gpt-6.2-sol": 6.0,
     "gpt-6-astra": 6.0,
     "gpt-6.1-sol": 6.0,
 }
+# GPT-6.2 Astra and Sol bill at 3x until March 1, 2027 at midnight Pacific (08:00 UTC).
+CODEX_ULTRAFAST_PROMO_END = datetime(2027, 3, 1, 8, tzinfo=UTC)
 
 MODEL_PRICING_ALIASES: dict[str, dict[str, str]] = {
     "codex": {

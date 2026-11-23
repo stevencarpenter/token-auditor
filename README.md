@@ -105,7 +105,8 @@ Codex token semantics:
 - Codex CLI's inline footer can show a smaller `total` because it commonly reports `uncached_input + output`, while this auditor reports the session usage
   values from the log.
 - Each `token_count` increment is priced at the model and service tier active for that turn, so sessions that switch models or run on the
-  `priority` (Fast mode) tier are priced turn by turn. Each turn's usage is its `last_token_usage`, so cumulative totals that restart
+  `priority` (Fast mode) or `ultrafast` tier are priced turn by turn. For GPT-6.2 Astra and Sol, the event timestamp selects the Ultrafast rate.
+  If the timestamp is missing or invalid, the estimate uses the launch rate. Each turn's usage is its `last_token_usage`, so cumulative totals that restart
   after compaction, and the parent usage a spawned subagent's first total carries, are neither dropped nor double counted.
 
 Claude token semantics:
